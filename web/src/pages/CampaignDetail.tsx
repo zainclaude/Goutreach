@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, Account, Campaign, Message, Stats, Step } from "../api";
+import { api, Account, Campaign, Lead, Message, Stats, Step } from "../api";
 
 export default function CampaignDetail() {
   const { id } = useParams();
@@ -12,6 +12,9 @@ export default function CampaignDetail() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [msg, setMsg] = useState("");
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+  const [selected, setSelected] = useState<number[]>([]);
 
   const loadCampaign = () =>
     api.get<{ campaign: Campaign; steps: Step[]; account_ids: number[] }>(`/campaigns/${cid}`).then((d) => {
@@ -20,8 +23,10 @@ export default function CampaignDetail() {
   const loadMessages = () => api.get<Message[]>(`/campaigns/${cid}/messages`).then((m) => setMessages(m || []));
   const loadStats = () => api.get<Stats>(`/campaigns/${cid}/stats`).then(setStats);
 
+  const loadLeads = () => api.get<Lead[]>("/leads").then((l) => setLeads(l || []));
+
   useEffect(() => {
-    loadCampaign(); loadMessages(); loadStats();
+    loadCampaign(); loadMessages(); loadStats(); loadLeads();
     api.get<Account[]>("/accounts").then((a) => setAccounts(a || []));
     const t = setInterval(loadMessages, 5000); // poll while previews generate
     return () => clearInterval(t);
@@ -33,6 +38,13 @@ export default function CampaignDetail() {
     await api.put(`/campaigns/${cid}/accounts`, { account_ids: next });
   };
   const enrollAll = async () => { const r = await api.post<{ enrolled: number }>(`/campaigns/${cid}/enroll`, { all: true }); setMsg(`Enrolled ${r.enrolled} leads`); };
+  const enrollUnemailed = async () => { const r = await api.post<{ enrolled: number }>(`/campaigns/${cid}/enroll`, { unemailed: true }); setMsg(`Enrolled ${r.enrolled} previously-uncontacted leads`); loadLeads(); };
+  const toggleSelected = (lid: number) => setSelected((s) => s.includes(lid) ? s.filter((x) => x !== lid) : [...s, lid]);
+  const enrollSelected = async () => {
+    if (selected.length === 0) { setMsg("No leads selected"); return; }
+    const r = await api.post<{ enrolled: number }>(`/campaigns/${cid}/enroll`, { lead_ids: selected });
+    setMsg(`Enrolled ${r.enrolled} leads`); setSelected([]); setShowPicker(false);
+  };
   const preview = async () => {
     try { const r = await api.post<{ generating: number }>(`/campaigns/${cid}/preview`); setMsg(`Generating ${r.generating} previews… (refreshes automatically)`); }
     catch (e: any) { setMsg(e.message); }
@@ -87,9 +99,27 @@ export default function CampaignDetail() {
         <h3>Leads & launch</h3>
         <div className="row">
           <button className="secondary" onClick={enrollAll}>Enroll all leads</button>
+          <button className="secondary" onClick={enrollUnemailed}>Enroll all unemailed leads</button>
+          <button className="secondary" onClick={() => setShowPicker(!showPicker)}>{showPicker ? "Hide lead picker" : "Select leads…"}</button>
           <button className="secondary" onClick={preview}>Generate {campaign.approval_count} previews</button>
           <button onClick={launch}>Approve & launch</button>
         </div>
+        {showPicker && (
+          <div style={{ marginTop: 12, maxHeight: 300, overflow: "auto", border: "1px solid #2a2a2a", borderRadius: 6, padding: 10 }}>
+            <div className="row" style={{ marginBottom: 8 }}>
+              <button className="secondary" onClick={() => setSelected(leads.map((l) => l.id))}>Select all</button>
+              <button className="secondary" onClick={() => setSelected([])}>Clear</button>
+              <button onClick={enrollSelected} disabled={selected.length === 0}>Enroll selected ({selected.length})</button>
+            </div>
+            {leads.length === 0 && <p className="muted">No leads yet — import leads first.</p>}
+            {leads.map((l) => (
+              <label key={l.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "2px 0" }}>
+                <input type="checkbox" style={{ width: "auto" }} checked={selected.includes(l.id)} onChange={() => toggleSelected(l.id)} />
+                <span>{l.email}{l.company && <span className="muted"> · {l.company}</span>}</span>
+              </label>
+            ))}
+          </div>
+        )}
         <p className="muted" style={{ marginTop: 8 }}>
           Each email is researched per the TikTok Shop → Amazon → Meta ads → retail decision tree, then written from the matching template.
         </p>

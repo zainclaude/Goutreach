@@ -180,16 +180,22 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		LeadIDs []int64 `json:"lead_ids"`
-		All     bool    `json:"all"`
+		LeadIDs   []int64 `json:"lead_ids"`
+		All       bool    `json:"all"`
+		Unemailed bool    `json:"unemailed"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	ids := req.LeadIDs
-	if req.All {
-		leads, err := s.st.ListLeads(r.Context(), s.userID(r))
+	if req.All || req.Unemailed {
+		// "all" enrolls every lead; "unemailed" only those never enrolled before.
+		list := s.st.ListLeads
+		if req.Unemailed {
+			list = s.st.ListUnenrolledLeads
+		}
+		leads, err := list(r.Context(), s.userID(r))
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return

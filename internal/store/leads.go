@@ -71,6 +71,29 @@ func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	return out, rows.Err()
 }
 
+// ListUnenrolledLeads returns leads that have never been enrolled in ANY campaign
+// (i.e., not yet contacted), so they can be added without double-emailing someone
+// already in a sequence.
+func (s *Store) ListUnenrolledLeads(ctx context.Context, userID int64) ([]Lead, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+leadCols+` FROM leads
+		 WHERE user_id=$1 AND id NOT IN (SELECT lead_id FROM campaign_leads)
+		 ORDER BY id DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Lead
+	for rows.Next() {
+		l, err := scanLead(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 // GetLead returns one lead (no user scope, for internal workers).
 func (s *Store) GetLead(ctx context.Context, id int64) (Lead, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+leadCols+` FROM leads WHERE id=$1`, id)
