@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { api, Account, AccountStat } from "../api";
 
 const blank = {
-  email: "", from_name: "", smtp_host: "", smtp_port: 587, smtp_username: "", smtp_password: "",
+  provider: "gmail", email: "", from_name: "", password: "",
+  smtp_host: "", smtp_port: 587, smtp_username: "", smtp_password: "",
   imap_host: "", imap_port: 993, imap_username: "", imap_password: "",
   daily_limit: 30, warmup_enabled: false, warmup_target_per_day: 20,
 };
@@ -87,18 +88,51 @@ export default function Accounts() {
       </div>
 
       <div className="card">
-        <h3>Connect a mailbox (SMTP + IMAP)</h3>
-        <div className="grid2">
+        <h3>Connect a mailbox</h3>
+        <label>Provider</label>
+        <select value={form.provider} onChange={(e) => set("provider", e.target.value)}>
+          <option value="gmail">Google (Gmail / Workspace) — email + password</option>
+          <option value="outlook">Outlook / Microsoft 365 — email + password</option>
+          <option value="custom">Custom (manual SMTP / IMAP)</option>
+        </select>
+
+        <div className="grid2" style={{ marginTop: 8 }}>
           <div><label>Email</label><input value={form.email} onChange={(e) => set("email", e.target.value)} /></div>
           <div><label>From name</label><input value={form.from_name} onChange={(e) => set("from_name", e.target.value)} /></div>
-          <div><label>SMTP host</label><input value={form.smtp_host} onChange={(e) => set("smtp_host", e.target.value)} placeholder="smtp.gmail.com" /></div>
-          <div><label>SMTP port</label><input type="number" value={form.smtp_port} onChange={(e) => set("smtp_port", Number(e.target.value))} /></div>
-          <div><label>SMTP username</label><input value={form.smtp_username} onChange={(e) => set("smtp_username", e.target.value)} placeholder="(defaults to email)" /></div>
-          <div><label>SMTP password</label><input type="password" value={form.smtp_password} onChange={(e) => set("smtp_password", e.target.value)} /></div>
-          <div><label>IMAP host</label><input value={form.imap_host} onChange={(e) => set("imap_host", e.target.value)} placeholder="imap.gmail.com" /></div>
-          <div><label>IMAP port</label><input type="number" value={form.imap_port} onChange={(e) => set("imap_port", Number(e.target.value))} /></div>
-          <div><label>IMAP username</label><input value={form.imap_username} onChange={(e) => set("imap_username", e.target.value)} placeholder="(defaults to email)" /></div>
-          <div><label>IMAP password</label><input type="password" value={form.imap_password} onChange={(e) => set("imap_password", e.target.value)} /></div>
+        </div>
+
+        {form.provider !== "custom" ? (
+          <>
+            <label>Password</label>
+            <input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} />
+            {form.provider === "gmail" && (
+              <p className="muted">
+                Use a Google <b>App Password</b> (Google Account → Security → 2-Step Verification → App passwords),
+                not your normal password. For Workspace, make sure IMAP is enabled in Gmail settings. SMTP/IMAP
+                servers are filled in automatically.
+              </p>
+            )}
+            {form.provider === "outlook" && (
+              <p className="muted">
+                Enter your account password (or app password if MFA is on). Servers are filled in automatically.
+                Note: some Microsoft 365 tenants disable basic auth — if verification fails, your admin must allow it.
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="grid2" style={{ marginTop: 8 }}>
+            <div><label>SMTP host</label><input value={form.smtp_host} onChange={(e) => set("smtp_host", e.target.value)} placeholder="smtp.example.com" /></div>
+            <div><label>SMTP port</label><input type="number" value={form.smtp_port} onChange={(e) => set("smtp_port", Number(e.target.value))} /></div>
+            <div><label>SMTP username</label><input value={form.smtp_username} onChange={(e) => set("smtp_username", e.target.value)} placeholder="(defaults to email)" /></div>
+            <div><label>SMTP password</label><input type="password" value={form.smtp_password} onChange={(e) => set("smtp_password", e.target.value)} /></div>
+            <div><label>IMAP host</label><input value={form.imap_host} onChange={(e) => set("imap_host", e.target.value)} placeholder="imap.example.com" /></div>
+            <div><label>IMAP port</label><input type="number" value={form.imap_port} onChange={(e) => set("imap_port", Number(e.target.value))} /></div>
+            <div><label>IMAP username</label><input value={form.imap_username} onChange={(e) => set("imap_username", e.target.value)} placeholder="(defaults to email)" /></div>
+            <div><label>IMAP password</label><input type="password" value={form.imap_password} onChange={(e) => set("imap_password", e.target.value)} /></div>
+          </div>
+        )}
+
+        <div className="grid2" style={{ marginTop: 8 }}>
           <div><label>Daily send limit</label><input type="number" value={form.daily_limit} onChange={(e) => set("daily_limit", Number(e.target.value))} /></div>
           <div><label>Warmup target / day</label><input type="number" value={form.warmup_target_per_day} onChange={(e) => set("warmup_target_per_day", Number(e.target.value))} /></div>
         </div>

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zainclaude/goutreach/internal/mailer"
@@ -10,8 +11,10 @@ import (
 )
 
 type accountReq struct {
+	Provider           string `json:"provider"` // "", "gmail"/"google", "outlook"/"office365"
 	Email              string `json:"email"`
 	FromName           string `json:"from_name"`
+	Password           string `json:"password"` // shared password (used for both SMTP+IMAP when set)
 	SMTPHost           string `json:"smtp_host"`
 	SMTPPort           int    `json:"smtp_port"`
 	SMTPUsername       string `json:"smtp_username"`
@@ -25,7 +28,36 @@ type accountReq struct {
 	WarmupTargetPerDay int    `json:"warmup_target_per_day"`
 }
 
+// providerPreset holds the SMTP/IMAP servers for a known provider.
+type providerPreset struct{ smtpHost, imapHost string }
+
+var providerPresets = map[string]providerPreset{
+	"gmail":     {"smtp.gmail.com", "imap.gmail.com"},
+	"google":    {"smtp.gmail.com", "imap.gmail.com"},
+	"outlook":   {"smtp-mail.outlook.com", "outlook.office365.com"},
+	"office365": {"smtp.office365.com", "outlook.office365.com"},
+	"microsoft": {"smtp-mail.outlook.com", "outlook.office365.com"},
+}
+
 func (a *accountReq) applyDefaults() {
+	// Provider presets fill in hosts so the user only needs email + password.
+	if p, ok := providerPresets[strings.ToLower(a.Provider)]; ok {
+		if a.SMTPHost == "" {
+			a.SMTPHost = p.smtpHost
+		}
+		if a.IMAPHost == "" {
+			a.IMAPHost = p.imapHost
+		}
+	}
+	// A single shared password populates both SMTP and IMAP.
+	if a.Password != "" {
+		if a.SMTPPassword == "" {
+			a.SMTPPassword = a.Password
+		}
+		if a.IMAPPassword == "" {
+			a.IMAPPassword = a.Password
+		}
+	}
 	if a.SMTPPort == 0 {
 		a.SMTPPort = 587
 	}
@@ -76,11 +108,15 @@ func (s *Server) handleVerifyAccount(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	var req accountReq
-	if err := readJSON(r, &req); err != nil || req.Email == "" || req.SMTPHost == "" || req.IMAPHost == "" {
-		writeErr(w, http.StatusBadRequest, "email, smtp_host and imap_host are required")
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	req.applyDefaults()
+	if req.Email == "" || req.SMTPHost == "" || req.IMAPHost == "" {
+		writeErr(w, http.StatusBadRequest, "email is required (and host/port for custom providers)")
+		return
+	}
 	if err := verifyCreds(req); err != nil {
 		writeErr(w, http.StatusBadRequest, "verification failed: "+err.Error())
 		return
