@@ -1,0 +1,17 @@
+# Binaries
+/bin/
+/server
+*.exe
+
+# Env / secrets — never commit credentials
+.env
+*.env
+!.env.example
+
+# Node / frontend build
+web/node_modules/
+web/dist/
+
+# Editor / OS
+.DS_Store
+*.log

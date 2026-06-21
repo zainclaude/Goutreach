@@ -1,0 +1,76 @@
+package store
+
+import (
+	"context"
+	"time"
+)
+
+// ReplyThread represents a lead who replied, for the unified inbox.
+type ReplyThread struct {
+	MessageID    int64      `json:"message_id"`     // our DB message id
+	AccountID    *int64     `json:"account_id"`     // inbox that sent it
+	RFCMessageID string     `json:"rfc_message_id"` // Message-ID for threading
+	Subject      string     `json:"subject"`
+	Body         string     `json:"body"`
+	SentAt       *time.Time `json:"sent_at"`
+	RepliedAt    *time.Time `json:"replied_at"`
+	LeadEmail    string     `json:"lead_email"`
+	LeadName     string     `json:"lead_name"`
+	CampaignID   int64      `json:"campaign_id"`
+	CampaignName string     `json:"campaign_name"`
+	ReplySnippet string     `json:"reply_snippet"`
+}
+
+// ListReplies returns campaign messages that received a reply (warmup excluded:
+// warmup mail is never stored in the messages table).
+func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT m.id, m.account_id, m.message_id, m.subject, m.body, m.sent_at,
+		       (SELECT max(created_at) FROM events e WHERE e.message_id=m.id AND e.type='reply') AS replied_at,
+		       l.email, trim(l.first_name || ' ' || l.last_name), c.id, c.name,
+		       COALESCE((SELECT metadata->>'subject' FROM events e
+		                 WHERE e.message_id=m.id AND e.type='reply' ORDER BY id DESC LIMIT 1), '')
+		FROM messages m
+		JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
+		JOIN leads l ON l.id = cl.lead_id
+		JOIN campaigns c ON c.id = cl.campaign_id
+		WHERE c.user_id=$1 AND m.status='replied'
+		ORDER BY replied_at DESC NULLS LAST`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ReplyThread
+	for rows.Next() {
+		var t ReplyThread
+		if err := rows.Scan(&t.MessageID, &t.AccountID, &t.RFCMessageID, &t.Subject, &t.Body,
+			&t.SentAt, &t.RepliedAt, &t.LeadEmail, &t.LeadName, &t.CampaignID, &t.CampaignName,
+			&t.ReplySnippet); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// GetReplyContext loads what's needed to send a manual reply to a thread, scoped
+// to the user.
+func (s *Store) GetReplyContext(ctx context.Context, userID, messageID int64) (Message, EmailAccount, Lead, bool, error) {
+	m, err := s.GetMessage(ctx, messageID)
+	if err != nil || m.AccountID == nil {
+		return Message{}, EmailAccount{}, Lead{}, false, nil
+	}
+	acc, err := s.GetAccount(ctx, userID, *m.AccountID)
+	if err != nil {
+		return Message{}, EmailAccount{}, Lead{}, false, nil
+	}
+	cl, err := s.GetCampaignLead(ctx, m.CampaignLeadID)
+	if err != nil {
+		return Message{}, EmailAccount{}, Lead{}, false, nil
+	}
+	lead, err := s.GetLead(ctx, cl.LeadID)
+	if err != nil {
+		return Message{}, EmailAccount{}, Lead{}, false, nil
+	}
+	return m, acc, lead, true, nil
+}

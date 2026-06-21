@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS warmup_messages;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS campaign_leads;
+DROP TABLE IF EXISTS campaign_accounts;
+DROP TABLE IF EXISTS campaign_steps;
+DROP TABLE IF EXISTS campaigns;
+DROP TABLE IF EXISTS leads;
+DROP TABLE IF EXISTS email_accounts;
+DROP TABLE IF EXISTS users;

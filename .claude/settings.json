@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "go build ./... >/dev/null 2>&1; if [ -d web ] && [ ! -d web/node_modules ]; then (cd web && npm install >/dev/null 2>&1); fi; echo 'goutreach: go build ok; web deps ready'"
+          }
+        ]
+      }
+    ]
+  }
+}
