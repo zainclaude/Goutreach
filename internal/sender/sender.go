@@ -135,6 +135,26 @@ func (s *Service) ensureGenerated(ctx context.Context, campaign store.Campaign, 
 	if err != nil {
 		return store.Message{}, fmt.Errorf("get lead: %w", err)
 	}
+
+	// Brand-level cache: if this domain was already routed for this step, reuse
+	// the saved email (re-personalized for this contact) — no tokens, no wait.
+	domain := emailDomain(lead.Email)
+	cacheable := domain != "" && !isFreeMail(domain)
+	if cacheable {
+		if cached, ok, err := s.st.GetBrandEmail(ctx, campaign.UserID, domain, step.StepIndex); err != nil {
+			s.log.Printf("sender: brand cache lookup %s: %v", domain, err)
+		} else if ok {
+			subject := ai.Personalize(cached.Subject, lead)
+			body := ai.Personalize(cached.Body, lead)
+			notes := fmt.Sprintf("cached brand email (%s, template %s)", domain, cached.TemplateUsed)
+			if err := s.st.SetMessageGenerated(ctx, msg.ID, subject, body, cached.TemplateUsed, notes); err != nil {
+				return store.Message{}, err
+			}
+			s.log.Printf("sender: reused cached email for %s (lead %d, step %d) — skipped generation", domain, lead.ID, step.StepIndex)
+			return s.st.GetMessage(ctx, msg.ID)
+		}
+	}
+
 	templates, err := s.st.ListTemplates(ctx, campaign.UserID)
 	if err != nil {
 		return store.Message{}, fmt.Errorf("templates: %w", err)
@@ -154,6 +174,23 @@ func (s *Service) ensureGenerated(ctx context.Context, campaign store.Campaign, 
 	notes := fmt.Sprintf("template %s: %s", res.TemplateUsed, res.Reasoning)
 	if err := s.st.SetMessageGenerated(ctx, msg.ID, res.Subject, res.Body, res.TemplateUsed, notes); err != nil {
 		return store.Message{}, err
+	}
+
+	// Cache this brand's email so future contacts at the same domain reuse it.
+	if cacheable {
+		brandName := strings.TrimSpace(lead.Company)
+		if brandName == "" {
+			brandName = domain
+		}
+		if err := s.st.SaveBrandEmail(ctx, store.BrandEmail{
+			UserID: campaign.UserID, Domain: domain, StepIndex: step.StepIndex,
+			BrandName: brandName, TemplateUsed: res.TemplateUsed,
+			Subject:       ai.TokenizeName(res.Subject, lead),
+			Body:          ai.TokenizeName(res.Body, lead),
+			ResearchNotes: res.Reasoning,
+		}); err != nil {
+			s.log.Printf("sender: brand cache save %s: %v", domain, err)
+		}
 	}
 	return s.st.GetMessage(ctx, msg.ID)
 }
@@ -207,6 +244,26 @@ func (s *Service) advance(ctx context.Context, cl store.CampaignLead, step store
 	when := time.Now().Add(time.Duration(next.DelayDays) * 24 * time.Hour)
 	return s.st.AdvanceCampaignLead(ctx, cl.ID, next.StepIndex, when, "active")
 }
+
+// emailDomain returns the lowercased domain part of an email ("" if malformed).
+func emailDomain(email string) string {
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(email[at+1:]))
+}
+
+// freeMailDomains are public mailbox providers — not brand domains — so we never
+// cluster unrelated leads under them in the brand cache.
+var freeMailDomains = map[string]bool{
+	"gmail.com": true, "googlemail.com": true, "yahoo.com": true, "ymail.com": true,
+	"hotmail.com": true, "outlook.com": true, "live.com": true, "msn.com": true,
+	"icloud.com": true, "me.com": true, "mac.com": true, "aol.com": true,
+	"proton.me": true, "protonmail.com": true, "gmx.com": true, "zoho.com": true,
+}
+
+func isFreeMail(domain string) bool { return freeMailDomains[domain] }
 
 // pickAccount returns the next inbox in strict round-robin order: the eligible
 // account (active, under its daily cap) that has sent the fewest emails today,

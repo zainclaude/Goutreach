@@ -303,6 +303,30 @@ Step 4. Use web_search to assess whether the brand has a big retail presence
 
 // --- helpers ---
 
+// Personalize fills per-lead merge tokens (name, title, email, custom.*) into a
+// cached brand email. Brand-level details were already baked in at generation time.
+func Personalize(s string, lead store.Lead) string {
+	return renderVars(s, lead, lead.Company, true)
+}
+
+// TokenizeName replaces the lead's name with merge tokens so a generated email
+// can be cached at the brand level and re-personalized for other contacts. Longer
+// (full) names are replaced first so "Jane Doe" doesn't leave a stray "Doe".
+func TokenizeName(s string, lead store.Lead) string {
+	repl := func(in, name, token string) string {
+		if strings.TrimSpace(name) == "" {
+			return in
+		}
+		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`)
+		return re.ReplaceAllString(in, token)
+	}
+	full := strings.TrimSpace(lead.FirstName + " " + lead.LastName)
+	s = repl(s, full, "{{full_name}}")
+	s = repl(s, lead.FirstName, "{{first_name}}")
+	s = repl(s, lead.LastName, "{{last_name}}")
+	return s
+}
+
 // kickoff is the first user message; it nudges domain-only leads to resolve the
 // real brand name before researching.
 func kickoff(brand string, brandIsDomain bool) string {

@@ -2,10 +2,32 @@ package ai
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/zainclaude/goutreach/internal/store"
 )
+
+func TestTokenizeThenPersonalize(t *testing.T) {
+	jane := store.Lead{FirstName: "Jane", LastName: "Doe", Email: "jane@acme.com"}
+	body := "Hi Jane, saw Acme is crushing it. — Sam"
+	tok := TokenizeName(body, jane)
+	if !strings.Contains(tok, "Hi {{first_name}},") {
+		t.Fatalf("tokenize didn't replace first name: %q", tok)
+	}
+	// Reuse the cached email for a different contact at the same brand.
+	bob := store.Lead{FirstName: "Bob", Email: "bob@acme.com"}
+	out := Personalize(tok, bob)
+	if !strings.Contains(out, "Hi Bob,") {
+		t.Fatalf("personalize didn't fill new name: %q", out)
+	}
+	if strings.Contains(out, "Jane") {
+		t.Fatalf("old name leaked into reused email: %q", out)
+	}
+	if !strings.Contains(out, "Acme") {
+		t.Fatalf("brand text should be preserved: %q", out)
+	}
+}
 
 func TestRenderVars(t *testing.T) {
 	lead := store.Lead{
