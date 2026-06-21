@@ -59,6 +59,44 @@ type Result struct {
 
 var errDisabled = errors.New("ai generation disabled: ANTHROPIC_API_KEY not set")
 
+// markerFillRules tells the model how to resolve the (A#n)/(C#n) placeholders the
+// templates carry. The cardinal rule is verify-or-omit: every figure must come
+// from tool research, and any figure that cannot be verified is dropped (its
+// parenthetical or whole line removed) — never fabricated.
+const markerFillRules = `
+TEMPLATE MARKER FILL-IN RULES:
+The chosen template's text contains parenthetical placeholders tagged with codes
+like (A#0), (A#1) ... (C#0). Replace each placeholder using the rule below and
+remove the tag itself from the final copy. Base every number ONLY on data you
+verified with the tools. If a specific figure cannot be verified, apply its
+fallback — do NOT invent numbers. Boundary values go to the higher tier.
+
+Template A (TikTok Shop) — metrics come from Kalodata-style TikTok Shop data:
+- A#0  Performance phrase from monthly TikTok Shop revenue:
+       >= $100K/mo -> "crushing it"; $20K-$100K/mo -> "picking up";
+       < $20K/mo -> "just getting started".
+       Fallback (revenue unverifiable): pick the phrase that best fits the
+       strongest public signals, and do NOT state a dollar figure you didn't verify.
+- A#1  Number of active affiliates -> place inside the parenthesis.
+       Fallback: if unverifiable, remove that parenthetical entirely.
+- A#2  Number of videos posted in the last 30 days -> place inside the parenthesis.
+       Fallback: if unverifiable, remove that parenthetical entirely.
+- A#3  Video-volume nudge, from the A#2 number:
+       < 300 -> "at least 300 videos/month";
+       300-1,000 -> "at least 1,000 videos/month";
+       1,000-2,000 -> "at least 2,000 videos/month";
+       >= 2,000 -> delete this line entirely.
+       Fallback: if A#2 is unverifiable, delete this line.
+- A#4  Sales-lift percentage tied to A#0:
+       "crushing it" -> 20%; "picking up" -> 50%; "just getting started" -> 100%.
+
+Template C (Meta ads):
+- C#0  Number of ACTIVE ads in the United States from the Meta Ad Library ->
+       place inside the parenthesis. This count also qualifies the brand for
+       Template C. Fallback: if you cannot determine the count, do NOT use
+       Template C — continue the decision tree to the next step.
+`
+
 // Generate runs the research decision tree and writes the email.
 func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 	if !g.enabled {
@@ -188,13 +226,17 @@ func (g *Generator) systemPrompt(in Input, brand string) string {
 	}
 
 	b.WriteString(`DECISION TREE — follow IN ORDER to select exactly one template:
-Step 1. Use the check_tiktok_shop tool to see if the brand is on TikTok Shop.
-        If on_tiktok_shop = "yes" -> use TEMPLATE A. Otherwise continue.
+Step 1. Determine whether the brand sells on TikTok Shop. Call check_tiktok_shop
+        first; if it returns "unknown", fall back to web_search/web_fetch (search
+        "<brand> TikTok Shop", check tiktok.com and public kalodata.com pages).
+        If there is credible evidence the brand sells on TikTok Shop -> TEMPLATE A.
+        Otherwise continue.
 Step 2. Use web_search/web_fetch to check amazon.com for the brand's products.
         If the brand sells on Amazon -> use TEMPLATE B. Otherwise continue.
-Step 3. Use web_search/web_fetch to check the Meta Ad Library
-        (facebook.com/ads/library) for active ads from the brand.
-        If the brand is running Meta ads -> use TEMPLATE C. Otherwise continue.
+Step 3. Check the Meta Ad Library for ACTIVE ads in the United States by fetching
+        https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&media_type=all&search_type=keyword_unordered&q=<brand>
+        (URL-encode the brand name). Count the active ads — this is C#0.
+        If there is at least 1 active US ad -> use TEMPLATE C. Otherwise continue.
 Step 4. Use web_search to assess whether the brand has a big retail presence
         (sold in major retailers like Target, Walmart, Sephora, Ulta, etc.).
         If yes -> use TEMPLATE D. If no -> use the generic TEMPLATE E.
@@ -215,6 +257,8 @@ Step 4. Use web_search to assess whether the brand has a big retail presence
 		}
 		fmt.Fprintf(&b, "Body:\n%s\n\n", body)
 	}
+
+	b.WriteString(markerFillRules)
 
 	b.WriteString(`OUTPUT RULES:
 - Do your research with the tools first.
