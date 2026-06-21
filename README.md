@@ -9,6 +9,8 @@ Built with a **Go** backend + workers, **Postgres**, and a **React/TypeScript** 
 ## What it does
 
 - **Connect mailboxes** via SMTP (sending) + IMAP (reply/bounce tracking) — any provider.
+  Google/Outlook can be added with just email + app password, or via **"Sign in with
+  Google" OAuth** (no app password; uses XOAUTH2).
 - **Warm up** inboxes with a peer-network ramp across your own connected accounts (auto
   open + occasional auto-reply) to build sending reputation.
 - **Import leads** (CSV or manual) with custom fields.
@@ -78,8 +80,21 @@ cd web && npm run dev    # Vite on :5173, proxies /api + /t to :8080
 | `DATABASE_URL` | Postgres connection string |
 | `APP_URL` | Public base URL used in tracking links |
 | `ANTHROPIC_API_KEY` | Claude API key (required for AI generation) |
-| `ENCRYPTION_KEY` | 32+ byte key for at-rest encryption |
+| `ENCRYPTION_KEY` | Any non-empty secret for at-rest encryption (hashed to 32 bytes) |
 | `JWT_SECRET` | Dashboard session signing secret |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional — enables "Sign in with Google" |
+
+### "Sign in with Google" setup (optional)
+
+1. In Google Cloud Console → **APIs & Services**: enable the **Gmail API**, then create
+   an **OAuth client ID** (type: Web application).
+2. Add the authorized redirect URI: `<APP_URL>/api/oauth/google/callback`.
+3. Set `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and restart.
+4. On the **Email Accounts** page, choose **"Sign in with Google"** → authorize → the
+   mailbox is connected via OAuth (XOAUTH2), no app password needed.
+
+For your own Workspace domain, set the OAuth consent screen to **Internal** to skip
+Google's verification process for the restricted `mail.google.com` scope.
 
 Kalodata / Fastmoss credentials are entered in the **Settings** page and stored encrypted —
 they are never committed to source.

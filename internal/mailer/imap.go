@@ -10,12 +10,31 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 )
 
-// IMAPCreds describes how to authenticate to a receiving server.
+// IMAPCreds describes how to authenticate to a receiving server. If OAuthToken
+// is set, XOAUTH2 SASL is used; otherwise plain LOGIN with Password.
 type IMAPCreds struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
+	Host       string
+	Port       int
+	Username   string
+	Password   string
+	OAuthToken string
+}
+
+// xoauth2Client implements the minimal sasl.Client interface for XOAUTH2, which
+// go-sasl does not provide out of the box.
+type xoauth2Client struct {
+	username string
+	token    string
+}
+
+func (x *xoauth2Client) Start() (mech string, ir []byte, err error) {
+	resp := fmt.Sprintf("user=%s\x01auth=Bearer %s\x01\x01", x.username, x.token)
+	return "XOAUTH2", []byte(resp), nil
+}
+
+func (x *xoauth2Client) Next(challenge []byte) ([]byte, error) {
+	// On failure the server sends a challenge; an empty response surfaces the error.
+	return []byte(""), nil
 }
 
 // InboundMessage is the subset of an incoming email we care about for tracking.
@@ -33,6 +52,13 @@ func dialIMAP(creds IMAPCreds) (*imapclient.Client, error) {
 	c, err := imapclient.DialTLS(addr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("imap dial: %w", err)
+	}
+	if creds.OAuthToken != "" {
+		if err := c.Authenticate(&xoauth2Client{username: creds.Username, token: creds.OAuthToken}); err != nil {
+			_ = c.Close()
+			return nil, fmt.Errorf("imap xoauth2: %w", err)
+		}
+		return c, nil
 	}
 	if err := c.Login(creds.Username, creds.Password).Wait(); err != nil {
 		_ = c.Close()

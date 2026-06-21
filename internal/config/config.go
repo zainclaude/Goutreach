@@ -10,6 +10,10 @@ type Config struct {
 	AnthropicKey  string // ANTHROPIC_API_KEY
 	EncryptionKey string // 32-byte key (hex or raw) for AES-256-GCM at-rest encryption
 	JWTSecret     string // signing secret for dashboard sessions
+
+	GoogleClientID     string // OAuth client id for "Sign in with Google"
+	GoogleClientSecret string // OAuth client secret
+	GoogleRedirectURL  string // OAuth redirect (defaults to APP_URL + /api/oauth/google/callback)
 }
 
 // Load reads configuration from environment variables, applying defaults where
@@ -23,6 +27,13 @@ func Load() (Config, error) {
 		AnthropicKey:  os.Getenv("ANTHROPIC_API_KEY"),
 		EncryptionKey: os.Getenv("ENCRYPTION_KEY"),
 		JWTSecret:     env("JWT_SECRET", "dev-insecure-jwt-secret-change-me"),
+
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GoogleRedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+	}
+	if c.GoogleRedirectURL == "" {
+		c.GoogleRedirectURL = appURL() + "/api/oauth/google/callback"
 	}
 	if c.EncryptionKey == "" {
 		// Dev-only fallback so the app boots locally; production must set this.

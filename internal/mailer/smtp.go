@@ -9,12 +9,14 @@ import (
 	"github.com/wneessen/go-mail"
 )
 
-// SMTPCreds describes how to authenticate to a sending server.
+// SMTPCreds describes how to authenticate to a sending server. If OAuthToken is
+// set, XOAUTH2 is used (Username is the mailbox address); otherwise Password auth.
 type SMTPCreds struct {
-	Host     string
-	Port     int
-	Username string
-	Password string
+	Host       string
+	Port       int
+	Username   string
+	Password   string
+	OAuthToken string
 }
 
 // OutgoingEmail is a message to send.
@@ -35,9 +37,12 @@ func newClient(c SMTPCreds) (*mail.Client, error) {
 	opts := []mail.Option{
 		mail.WithPort(c.Port),
 		mail.WithUsername(c.Username),
-		mail.WithPassword(c.Password),
-		mail.WithSMTPAuth(mail.SMTPAuthPlain),
 		mail.WithTimeout(30 * time.Second),
+	}
+	if c.OAuthToken != "" {
+		opts = append(opts, mail.WithSMTPAuth(mail.SMTPAuthXOAUTH2), mail.WithPassword(c.OAuthToken))
+	} else {
+		opts = append(opts, mail.WithSMTPAuth(mail.SMTPAuthPlain), mail.WithPassword(c.Password))
 	}
 	if c.Port == 465 {
 		opts = append(opts, mail.WithSSL())

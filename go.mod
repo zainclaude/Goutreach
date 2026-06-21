@@ -10,9 +10,11 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/wneessen/go-mail v0.7.3
 	golang.org/x/crypto v0.53.0
+	golang.org/x/oauth2 v0.36.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.5.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/emersion/go-message v0.18.2 // indirect
@@ -29,5 +31,6 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
 	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 )

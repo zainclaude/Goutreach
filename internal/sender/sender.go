@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/zainclaude/goutreach/internal/ai"
-	"github.com/zainclaude/goutreach/internal/crypto"
+	"github.com/zainclaude/goutreach/internal/mailauth"
 	"github.com/zainclaude/goutreach/internal/mailer"
 	"github.com/zainclaude/goutreach/internal/store"
 )
@@ -19,15 +19,15 @@ import (
 // Service generates and sends campaign emails.
 type Service struct {
 	st     *store.Store
-	cipher *crypto.Cipher
+	res    *mailauth.Resolver
 	gen    *ai.Generator
 	appURL string
 	log    *log.Logger
 }
 
 // New builds a sender Service.
-func New(st *store.Store, cipher *crypto.Cipher, gen *ai.Generator, appURL string, logger *log.Logger) *Service {
-	return &Service{st: st, cipher: cipher, gen: gen, appURL: appURL, log: logger}
+func New(st *store.Store, res *mailauth.Resolver, gen *ai.Generator, appURL string, logger *log.Logger) *Service {
+	return &Service{st: st, res: res, gen: gen, appURL: appURL, log: logger}
 }
 
 // Run starts the scheduler loop until the context is cancelled.
@@ -163,9 +163,9 @@ func (s *Service) send(ctx context.Context, campaign store.Campaign, cl store.Ca
 	if err != nil {
 		return err
 	}
-	smtpPass, err := s.cipher.Decrypt(account.SMTPPasswordEnc)
+	smtpCreds, err := s.res.SMTP(ctx, account)
 	if err != nil {
-		return fmt.Errorf("decrypt smtp password: %w", err)
+		return fmt.Errorf("smtp creds: %w", err)
 	}
 
 	subject := msg.Subject
@@ -182,12 +182,7 @@ func (s *Service) send(ctx context.Context, campaign store.Campaign, cl store.Ca
 
 	htmlBody := buildHTML(msg.Body, s.appURL, msg.ID, campaign.TrackOpens, campaign.TrackClicks)
 
-	messageID, err := mailer.Send(ctx, mailer.SMTPCreds{
-		Host:     account.SMTPHost,
-		Port:     account.SMTPPort,
-		Username: account.SMTPUsername,
-		Password: smtpPass,
-	}, mailer.OutgoingEmail{
+	messageID, err := mailer.Send(ctx, smtpCreds, mailer.OutgoingEmail{
 		FromAddr:  account.Email,
 		FromName:  account.FromName,
 		ToAddr:    lead.Email,

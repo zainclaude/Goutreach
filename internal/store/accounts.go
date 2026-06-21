@@ -8,51 +8,65 @@ import (
 // EmailAccount is a connected sending/receiving mailbox. Password fields hold
 // AES-GCM ciphertext and are never serialized to JSON.
 type EmailAccount struct {
-	ID                 int64     `json:"id"`
-	UserID             int64     `json:"user_id"`
-	Email              string    `json:"email"`
-	FromName           string    `json:"from_name"`
-	SMTPHost           string    `json:"smtp_host"`
-	SMTPPort           int       `json:"smtp_port"`
-	SMTPUsername       string    `json:"smtp_username"`
-	SMTPPasswordEnc    string    `json:"-"`
-	IMAPHost           string    `json:"imap_host"`
-	IMAPPort           int       `json:"imap_port"`
-	IMAPUsername       string    `json:"imap_username"`
-	IMAPPasswordEnc    string    `json:"-"`
-	DailyLimit         int       `json:"daily_limit"`
-	WarmupEnabled      bool      `json:"warmup_enabled"`
-	WarmupTargetPerDay int       `json:"warmup_target_per_day"`
-	Status             string    `json:"status"`
-	LastError          string    `json:"last_error"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID                   int64     `json:"id"`
+	UserID               int64     `json:"user_id"`
+	Email                string    `json:"email"`
+	FromName             string    `json:"from_name"`
+	SMTPHost             string    `json:"smtp_host"`
+	SMTPPort             int       `json:"smtp_port"`
+	SMTPUsername         string    `json:"smtp_username"`
+	SMTPPasswordEnc      string    `json:"-"`
+	IMAPHost             string    `json:"imap_host"`
+	IMAPPort             int       `json:"imap_port"`
+	IMAPUsername         string    `json:"imap_username"`
+	IMAPPasswordEnc      string    `json:"-"`
+	DailyLimit           int       `json:"daily_limit"`
+	WarmupEnabled        bool      `json:"warmup_enabled"`
+	WarmupTargetPerDay   int       `json:"warmup_target_per_day"`
+	Status               string    `json:"status"`
+	LastError            string    `json:"last_error"`
+	AuthType             string    `json:"auth_type"` // "password" | "oauth"
+	OAuthRefreshTokenEnc string    `json:"-"`
+	CreatedAt            time.Time `json:"created_at"`
 }
 
 const accountCols = `id, user_id, email, from_name, smtp_host, smtp_port, smtp_username,
 	smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc,
-	daily_limit, warmup_enabled, warmup_target_per_day, status, last_error, created_at`
+	daily_limit, warmup_enabled, warmup_target_per_day, status, last_error,
+	auth_type, oauth_refresh_token_enc, created_at`
 
 func scanAccount(row interface{ Scan(...any) error }) (EmailAccount, error) {
 	var a EmailAccount
 	err := row.Scan(&a.ID, &a.UserID, &a.Email, &a.FromName, &a.SMTPHost, &a.SMTPPort,
 		&a.SMTPUsername, &a.SMTPPasswordEnc, &a.IMAPHost, &a.IMAPPort, &a.IMAPUsername,
 		&a.IMAPPasswordEnc, &a.DailyLimit, &a.WarmupEnabled, &a.WarmupTargetPerDay,
-		&a.Status, &a.LastError, &a.CreatedAt)
+		&a.Status, &a.LastError, &a.AuthType, &a.OAuthRefreshTokenEnc, &a.CreatedAt)
 	return a, err
 }
 
 // CreateAccount inserts a new email account.
 func (s *Store) CreateAccount(ctx context.Context, a EmailAccount) (EmailAccount, error) {
+	if a.AuthType == "" {
+		a.AuthType = "password"
+	}
 	row := s.pool.QueryRow(ctx,
 		`INSERT INTO email_accounts
 		 (user_id, email, from_name, smtp_host, smtp_port, smtp_username, smtp_password_enc,
 		  imap_host, imap_port, imap_username, imap_password_enc, daily_limit,
-		  warmup_enabled, warmup_target_per_day)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		  warmup_enabled, warmup_target_per_day, auth_type, oauth_refresh_token_enc)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+		 ON CONFLICT (user_id, email) DO UPDATE SET
+		   from_name = EXCLUDED.from_name,
+		   smtp_host = EXCLUDED.smtp_host, smtp_port = EXCLUDED.smtp_port,
+		   smtp_username = EXCLUDED.smtp_username, smtp_password_enc = EXCLUDED.smtp_password_enc,
+		   imap_host = EXCLUDED.imap_host, imap_port = EXCLUDED.imap_port,
+		   imap_username = EXCLUDED.imap_username, imap_password_enc = EXCLUDED.imap_password_enc,
+		   auth_type = EXCLUDED.auth_type, oauth_refresh_token_enc = EXCLUDED.oauth_refresh_token_enc,
+		   status = 'active', last_error = ''
 		 RETURNING `+accountCols,
 		a.UserID, a.Email, a.FromName, a.SMTPHost, a.SMTPPort, a.SMTPUsername, a.SMTPPasswordEnc,
 		a.IMAPHost, a.IMAPPort, a.IMAPUsername, a.IMAPPasswordEnc, a.DailyLimit,
-		a.WarmupEnabled, a.WarmupTargetPerDay)
+		a.WarmupEnabled, a.WarmupTargetPerDay, a.AuthType, a.OAuthRefreshTokenEnc)
 	return scanAccount(row)
 }
 

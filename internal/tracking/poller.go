@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zainclaude/goutreach/internal/crypto"
+	"github.com/zainclaude/goutreach/internal/mailauth"
 	"github.com/zainclaude/goutreach/internal/mailer"
 	"github.com/zainclaude/goutreach/internal/store"
 )
@@ -15,14 +15,14 @@ import (
 // Poller periodically checks each account's IMAP inbox for replies and bounces,
 // and registers warmup deliveries.
 type Poller struct {
-	st     *store.Store
-	cipher *crypto.Cipher
-	log    *log.Logger
+	st  *store.Store
+	res *mailauth.Resolver
+	log *log.Logger
 }
 
 // NewPoller builds a reply/bounce poller.
-func NewPoller(st *store.Store, cipher *crypto.Cipher, logger *log.Logger) *Poller {
-	return &Poller{st: st, cipher: cipher, log: logger}
+func NewPoller(st *store.Store, res *mailauth.Resolver, logger *log.Logger) *Poller {
+	return &Poller{st: st, res: res, log: logger}
 }
 
 // Run polls all active accounts on an interval until the context is cancelled.
@@ -54,15 +54,9 @@ func (p *Poller) tick(ctx context.Context) {
 }
 
 func (p *Poller) pollAccount(ctx context.Context, acc store.EmailAccount) error {
-	pass, err := p.cipher.Decrypt(acc.IMAPPasswordEnc)
+	creds, err := p.res.IMAP(ctx, acc)
 	if err != nil {
 		return err
-	}
-	creds := mailer.IMAPCreds{
-		Host:     acc.IMAPHost,
-		Port:     acc.IMAPPort,
-		Username: acc.IMAPUsername,
-		Password: pass,
 	}
 	return mailer.Poll(ctx, creds, 50, func(in mailer.InboundMessage) error {
 		return p.handleInbound(ctx, acc, in)
@@ -121,7 +115,7 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 
 // replyWarmup sends a short reply to a received warmup message from this account.
 func (p *Poller) replyWarmup(ctx context.Context, acc store.EmailAccount, in mailer.InboundMessage) {
-	pass, err := p.cipher.Decrypt(acc.SMTPPasswordEnc)
+	creds, err := p.res.SMTP(ctx, acc)
 	if err != nil {
 		return
 	}
@@ -133,9 +127,7 @@ func (p *Poller) replyWarmup(ctx context.Context, acc store.EmailAccount, in mai
 		"Sounds good, thanks!", "Got it — appreciate the note.",
 		"Perfect, talk soon.", "Thanks for the update!", "Yes, let's do it.",
 	}
-	_, _ = mailer.Send(ctx, mailer.SMTPCreds{
-		Host: acc.SMTPHost, Port: acc.SMTPPort, Username: acc.SMTPUsername, Password: pass,
-	}, mailer.OutgoingEmail{
+	_, _ = mailer.Send(ctx, creds, mailer.OutgoingEmail{
 		FromAddr:  acc.Email,
 		FromName:  acc.FromName,
 		ToAddr:    in.FromAddr,

@@ -16,6 +16,8 @@ import (
 	"github.com/zainclaude/goutreach/internal/auth"
 	"github.com/zainclaude/goutreach/internal/config"
 	"github.com/zainclaude/goutreach/internal/crypto"
+	"github.com/zainclaude/goutreach/internal/googleoauth"
+	"github.com/zainclaude/goutreach/internal/mailauth"
 	"github.com/zainclaude/goutreach/internal/sender"
 	"github.com/zainclaude/goutreach/internal/store"
 	"github.com/zainclaude/goutreach/internal/tracking"
@@ -27,6 +29,8 @@ type Server struct {
 	st       *store.Store
 	auth     *auth.Auth
 	cipher   *crypto.Cipher
+	res      *mailauth.Resolver
+	google   *googleoauth.Client
 	sender   *sender.Service
 	gen      *ai.Generator
 	tracking *tracking.Handlers
@@ -34,10 +38,10 @@ type Server struct {
 }
 
 // New builds a Server.
-func New(cfg config.Config, st *store.Store, a *auth.Auth, cipher *crypto.Cipher, snd *sender.Service, gen *ai.Generator, logger *log.Logger) *Server {
+func New(cfg config.Config, st *store.Store, a *auth.Auth, cipher *crypto.Cipher, res *mailauth.Resolver, google *googleoauth.Client, snd *sender.Service, gen *ai.Generator, logger *log.Logger) *Server {
 	return &Server{
-		cfg: cfg, st: st, auth: a, cipher: cipher, sender: snd, gen: gen,
-		tracking: tracking.NewHandlers(st), log: logger,
+		cfg: cfg, st: st, auth: a, cipher: cipher, res: res, google: google,
+		sender: snd, gen: gen, tracking: tracking.NewHandlers(st), log: logger,
 	}
 }
 
@@ -57,6 +61,9 @@ func (s *Server) Router() http.Handler {
 	r.Post("/api/auth/signup", s.handleSignup)
 	r.Post("/api/auth/login", s.handleLogin)
 
+	// OAuth callback is public (Google redirects here without a bearer token).
+	r.Get("/api/oauth/google/callback", s.handleGoogleCallback)
+
 	// Protected API.
 	r.Route("/api", func(r chi.Router) {
 		r.Use(s.auth.Middleware)
@@ -72,6 +79,9 @@ func (s *Server) Router() http.Handler {
 			r.Patch("/{id}", s.handleUpdateAccount)
 			r.Delete("/{id}", s.handleDeleteAccount)
 		})
+
+		// Returns the Google consent URL to redirect the browser to.
+		r.Get("/oauth/google/start", s.handleGoogleStart)
 
 		r.Route("/replies", func(r chi.Router) {
 			r.Get("/", s.handleListReplies)

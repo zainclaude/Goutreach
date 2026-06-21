@@ -9,21 +9,21 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/zainclaude/goutreach/internal/crypto"
+	"github.com/zainclaude/goutreach/internal/mailauth"
 	"github.com/zainclaude/goutreach/internal/mailer"
 	"github.com/zainclaude/goutreach/internal/store"
 )
 
 // Service sends warmup mail between connected inboxes.
 type Service struct {
-	st     *store.Store
-	cipher *crypto.Cipher
-	log    *log.Logger
+	st  *store.Store
+	res *mailauth.Resolver
+	log *log.Logger
 }
 
 // New builds the warmup Service.
-func New(st *store.Store, cipher *crypto.Cipher, logger *log.Logger) *Service {
-	return &Service{st: st, cipher: cipher, log: logger}
+func New(st *store.Store, res *mailauth.Resolver, logger *log.Logger) *Service {
+	return &Service{st: st, res: res, log: logger}
 }
 
 // Run sends warmup mail on an hourly cadence until the context is cancelled.
@@ -73,11 +73,10 @@ func (s *Service) warmAccount(ctx context.Context, acc store.EmailAccount, all [
 		batch = 2
 	}
 
-	pass, err := s.cipher.Decrypt(acc.SMTPPasswordEnc)
+	creds, err := s.res.SMTP(ctx, acc)
 	if err != nil {
 		return err
 	}
-	creds := mailer.SMTPCreds{Host: acc.SMTPHost, Port: acc.SMTPPort, Username: acc.SMTPUsername, Password: pass}
 
 	for i := 0; i < batch; i++ {
 		recipient := pickRecipient(acc, all)

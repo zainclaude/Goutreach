@@ -14,6 +14,7 @@ export default function Accounts() {
   const [form, setForm] = useState({ ...blank });
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
 
   const load = () => {
     api.get<Account[]>("/accounts").then((a) => setAccounts(a || []));
@@ -23,7 +24,21 @@ export default function Accounts() {
       setStats(m);
     });
   };
-  useEffect(load, []);
+  useEffect(() => {
+    load();
+    api.get<{ google_enabled: boolean }>("/me").then((m) => setGoogleEnabled(m.google_enabled)).catch(() => {});
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("connected")) setMsg("✓ Google account connected");
+    if (p.get("error")) setMsg("✗ " + p.get("error"));
+  }, []);
+
+  const connectGoogle = async () => {
+    setMsg("");
+    try {
+      const r = await api.get<{ url: string }>("/oauth/google/start");
+      window.location.href = r.url;
+    } catch (e: any) { setMsg("✗ " + e.message); }
+  };
 
   const set = (k: string, v: any) => setForm({ ...form, [k]: v });
 
@@ -91,11 +106,23 @@ export default function Accounts() {
         <h3>Connect a mailbox</h3>
         <label>Provider</label>
         <select value={form.provider} onChange={(e) => set("provider", e.target.value)}>
-          <option value="gmail">Google (Gmail / Workspace) — email + password</option>
+          {googleEnabled && <option value="google_oauth">Google — Sign in with Google (OAuth, no password)</option>}
+          <option value="gmail">Google (Gmail / Workspace) — email + app password</option>
           <option value="outlook">Outlook / Microsoft 365 — email + password</option>
           <option value="custom">Custom (manual SMTP / IMAP)</option>
         </select>
 
+        {form.provider === "google_oauth" ? (
+          <div style={{ marginTop: 12 }}>
+            <p className="muted">
+              Authorize PipelineBuilder to send and read mail for a Google account — no app password needed.
+              You'll be redirected to Google to grant access, then bounced back here.
+            </p>
+            {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
+            <button onClick={connectGoogle}>Connect with Google</button>
+          </div>
+        ) : (
+        <>
         <div className="grid2" style={{ marginTop: 8 }}>
           <div><label>Email</label><input value={form.email} onChange={(e) => set("email", e.target.value)} /></div>
           <div><label>From name</label><input value={form.from_name} onChange={(e) => set("from_name", e.target.value)} /></div>
@@ -144,6 +171,8 @@ export default function Accounts() {
           <button className="secondary" disabled={busy} onClick={verify}>Verify</button>
           <button disabled={busy} onClick={create}>Add account</button>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

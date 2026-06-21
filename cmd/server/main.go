@@ -16,6 +16,8 @@ import (
 	"github.com/zainclaude/goutreach/internal/config"
 	"github.com/zainclaude/goutreach/internal/crypto"
 	"github.com/zainclaude/goutreach/internal/db"
+	"github.com/zainclaude/goutreach/internal/googleoauth"
+	"github.com/zainclaude/goutreach/internal/mailauth"
 	"github.com/zainclaude/goutreach/internal/research"
 	"github.com/zainclaude/goutreach/internal/sender"
 	"github.com/zainclaude/goutreach/internal/store"
@@ -58,16 +60,22 @@ func main() {
 		logger.Println("warning: ANTHROPIC_API_KEY not set — AI generation disabled")
 	}
 
-	snd := sender.New(st, cipher, gen, cfg.AppURL, logger)
-	poller := tracking.NewPoller(st, cipher, logger)
-	warm := warmup.New(st, cipher, logger)
+	google := googleoauth.New(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL)
+	if google.Enabled() {
+		logger.Println("Google OAuth enabled")
+	}
+	resolver := mailauth.New(cipher, google)
+
+	snd := sender.New(st, resolver, gen, cfg.AppURL, logger)
+	poller := tracking.NewPoller(st, resolver, logger)
+	warm := warmup.New(st, resolver, logger)
 
 	// Background workers.
 	go snd.Run(ctx)
 	go poller.Run(ctx)
 	go warm.Run(ctx)
 
-	server := api.New(cfg, st, authSvc, cipher, snd, gen, logger)
+	server := api.New(cfg, st, authSvc, cipher, resolver, google, snd, gen, logger)
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           server.Router(),

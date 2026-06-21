@@ -36,9 +36,9 @@ func (s *Server) handleSendReply(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "thread not found")
 		return
 	}
-	pass, err := s.cipher.Decrypt(acc.SMTPPasswordEnc)
+	creds, err := s.res.SMTP(r.Context(), acc)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "decrypt: "+err.Error())
+		writeErr(w, http.StatusInternalServerError, "smtp creds: "+err.Error())
 		return
 	}
 	subject := msg.Subject
@@ -46,9 +46,7 @@ func (s *Server) handleSendReply(w http.ResponseWriter, r *http.Request) {
 		subject = "Re: " + subject
 	}
 	refs := strings.TrimSpace(msg.References + " " + msg.MessageID)
-	_, err = mailer.Send(r.Context(), mailer.SMTPCreds{
-		Host: acc.SMTPHost, Port: acc.SMTPPort, Username: acc.SMTPUsername, Password: pass,
-	}, mailer.OutgoingEmail{
+	_, err = mailer.Send(r.Context(), creds, mailer.OutgoingEmail{
 		FromAddr:  acc.Email,
 		FromName:  acc.FromName,
 		ToAddr:    lead.Email,

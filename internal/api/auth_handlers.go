@@ -64,8 +64,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"user_id":    s.userID(r),
-		"ai_enabled": s.gen.Enabled(),
+		"user_id":        s.userID(r),
+		"ai_enabled":     s.gen.Enabled(),
+		"google_enabled": s.google.Enabled(),
 	})
 }
 
