@@ -31,6 +31,19 @@ export default function Templates() {
         Claude picks one of these per lead via the research decision tree, then personalizes it.
         Leave a template blank to let Claude write freely for that branch.
       </p>
+      <div className="card" style={{ background: "var(--panel2)" }}>
+        <b>Merge variables</b> — type these in any subject/body and they're filled from each lead's row:
+        <div style={{ marginTop: 6 }}>
+          {["first_name", "last_name", "full_name", "brand_name", "company", "title", "email", "custom.YOUR_CSV_COLUMN"].map((v) => (
+            <span key={v} className="tag" style={{ marginRight: 6 }}>{`{{${v}}}`}</span>
+          ))}
+        </div>
+        <div className="muted" style={{ marginTop: 6 }}>
+          e.g. <code>Hi {"{{first_name}}"}, saw {"{{brand_name}}"} is scaling…</code> &nbsp;•&nbsp;
+          <code>brand_name</code> = the lead's Company. Extra CSV columns are available as
+          <code> {"{{custom.column_name}}"}</code>.
+        </div>
+      </div>
       {msg && <p className="ok">{msg}</p>}
       {templates.map((t, i) => (
         <div className="card" key={t.key}>

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -200,17 +201,19 @@ Step 4. Use web_search to assess whether the brand has a big retail presence
 
 `)
 
-	b.WriteString("TEMPLATES (personalize the chosen one for this specific brand and contact; keep the template's structure and intent, fill in researched specifics, never invent facts you did not verify):\n\n")
+	b.WriteString("TEMPLATES (merge variables like {{first_name}} have already been filled in from this lead's data; personalize the chosen one for this specific brand and contact; keep the template's structure and intent, fill in researched specifics, never invent facts you did not verify):\n\n")
 	for _, t := range in.Templates {
 		fmt.Fprintf(&b, "TEMPLATE %s — %s\n", t.Key, firstNonEmpty(t.Name, store.TemplateDefaults[t.Key]))
-		if strings.TrimSpace(t.Subject) == "" && strings.TrimSpace(t.Body) == "" {
+		subject := renderVars(t.Subject, in.Lead, brand)
+		body := renderVars(t.Body, in.Lead, brand)
+		if strings.TrimSpace(subject) == "" && strings.TrimSpace(body) == "" {
 			b.WriteString("(No template text provided yet — write a sensible, concise cold email that fits this template's intent described above.)\n\n")
 			continue
 		}
-		if t.Subject != "" {
-			fmt.Fprintf(&b, "Subject: %s\n", t.Subject)
+		if subject != "" {
+			fmt.Fprintf(&b, "Subject: %s\n", subject)
 		}
-		fmt.Fprintf(&b, "Body:\n%s\n\n", t.Body)
+		fmt.Fprintf(&b, "Body:\n%s\n\n", body)
 	}
 
 	b.WriteString(`OUTPUT RULES:
@@ -285,6 +288,54 @@ func extractJSON(s string) string {
 		}
 	}
 	return ""
+}
+
+var varRe = regexp.MustCompile(`\{\{\s*[a-zA-Z0-9_.]+\s*\}\}`)
+
+// renderVars replaces {{variable}} merge tokens in a template with values from
+// the lead. Supported: first_name, last_name, full_name, company, brand_name/
+// brand, title, email, and custom.<key> (or a bare <key>) for CSV custom fields.
+// Unknown tokens are left untouched. Matching is case-insensitive.
+func renderVars(s string, lead store.Lead, brand string) string {
+	vars := map[string]string{
+		"first_name": lead.FirstName,
+		"last_name":  lead.LastName,
+		"full_name":  strings.TrimSpace(lead.FirstName + " " + lead.LastName),
+		"name":       strings.TrimSpace(lead.FirstName + " " + lead.LastName),
+		"company":    lead.Company,
+		"brand_name": brand,
+		"brand":      brand,
+		"title":      lead.Title,
+		"email":      lead.Email,
+	}
+	var custom map[string]any
+	if len(lead.CustomFields) > 0 {
+		_ = json.Unmarshal(lead.CustomFields, &custom)
+	}
+	lookupCustom := func(key string) (string, bool) {
+		for k, v := range custom {
+			if strings.EqualFold(k, key) {
+				return fmt.Sprint(v), true
+			}
+		}
+		return "", false
+	}
+	return varRe.ReplaceAllStringFunc(s, func(m string) string {
+		key := strings.ToLower(strings.Trim(m, "{} \t"))
+		if strings.HasPrefix(key, "custom.") {
+			if v, ok := lookupCustom(key[len("custom."):]); ok {
+				return v
+			}
+			return ""
+		}
+		if v, ok := vars[key]; ok {
+			return v
+		}
+		if v, ok := lookupCustom(key); ok {
+			return v
+		}
+		return m // leave unknown tokens as-is
+	})
 }
 
 func domainOf(email string) string {

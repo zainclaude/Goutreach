@@ -1,6 +1,33 @@
 package ai
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/zainclaude/goutreach/internal/store"
+)
+
+func TestRenderVars(t *testing.T) {
+	lead := store.Lead{
+		FirstName: "Jane", LastName: "Doe", Company: "Acme", Title: "CMO",
+		Email: "jane@acme.com", CustomFields: json.RawMessage(`{"city":"Austin"}`),
+	}
+	cases := map[string]string{
+		"Hi {{first_name}},":            "Hi Jane,",
+		"saw {{brand_name}} is growing": "saw Acme is growing",
+		"{{full_name}} ({{title}})":     "Jane Doe (CMO)",
+		"in {{custom.city}}?":           "in Austin?",
+		"by {{city}}":                   "by Austin",
+		"{{ first_name }} spaced":       "Jane spaced",
+		"{{unknown_token}} stays":       "{{unknown_token}} stays",
+		"{{COMPANY}} caps-insensitive":  "Acme caps-insensitive",
+	}
+	for in, want := range cases {
+		if got := renderVars(in, lead, lead.Company); got != want {
+			t.Errorf("renderVars(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
 
 func TestExtractJSON(t *testing.T) {
 	cases := map[string]string{
