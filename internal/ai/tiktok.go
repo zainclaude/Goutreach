@@ -2,10 +2,15 @@ package ai
 
 import "context"
 
-// TikTokShopResult is what a TikTok Shop check returns.
+// TikTokShopResult is what a TikTok Shop check returns. The metric fields are
+// pointers so that "unverified" (nil, omitted from JSON) is distinct from a real
+// zero — the generator must omit a marker when its metric is absent, never guess.
 type TikTokShopResult struct {
-	OnTikTokShop string `json:"on_tiktok_shop"` // "yes" | "no" | "unknown"
-	Details      string `json:"details"`
+	OnTikTokShop      string   `json:"on_tiktok_shop"` // "yes" | "no" | "unknown"
+	Details           string   `json:"details"`
+	MonthlyRevenueUSD *float64 `json:"monthly_revenue_usd,omitempty"` // trailing-30d TikTok Shop GMV
+	ActiveAffiliates  *int     `json:"active_affiliates,omitempty"`
+	Videos30d         *int     `json:"videos_last_30d,omitempty"`
 }
 
 // TikTokShopChecker determines whether a brand sells on TikTok Shop. The

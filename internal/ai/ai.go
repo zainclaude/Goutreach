@@ -71,7 +71,9 @@ remove the tag itself from the final copy. Base every number ONLY on data you
 verified with the tools. If a specific figure cannot be verified, apply its
 fallback — do NOT invent numbers. Boundary values go to the higher tier.
 
-Template A (TikTok Shop) — metrics come from Kalodata-style TikTok Shop data:
+Template A (TikTok Shop) — the figures come from the check_tiktok_shop tool
+(monthly_revenue_usd, active_affiliates, videos_last_30d); any field the tool
+omits is unverified, so apply that marker's fallback:
 - A#0  Performance phrase from monthly TikTok Shop revenue:
        >= $100K/mo -> "crushing it"; $20K-$100K/mo -> "picking up";
        < $20K/mo -> "just getting started".
@@ -113,7 +115,7 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 		{OfWebFetchTool20260209: &anthropic.WebFetchTool20260209Param{}},
 		{OfTool: &anthropic.ToolParam{
 			Name:        "check_tiktok_shop",
-			Description: anthropic.String("Check whether a brand sells on TikTok Shop using the kalodata.com data source. Returns on_tiktok_shop = yes | no | unknown."),
+			Description: anthropic.String("Check whether a brand sells on TikTok Shop using the kalodata.com data source. Returns on_tiktok_shop = yes | no | unknown, and — when available — the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d. Use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, do not guess."),
 			InputSchema: anthropic.ToolInputSchemaParam{
 				Properties: map[string]any{
 					"brand_name": map[string]any{
