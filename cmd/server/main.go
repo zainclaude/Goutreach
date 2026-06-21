@@ -55,7 +55,7 @@ func main() {
 	authSvc := auth.New(cfg.JWTSecret)
 
 	tiktok := research.New(st, cipher, logger)
-	gen := ai.New(cfg.AnthropicKey, tiktok)
+	gen := ai.New(cfg.AnthropicKey, tiktok, logger)
 	if !gen.Enabled() {
 		logger.Println("warning: ANTHROPIC_API_KEY not set — AI generation disabled")
 	}

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"regexp"
 	"strings"
 
@@ -21,12 +23,16 @@ type Generator struct {
 	client  anthropic.Client
 	enabled bool
 	tiktok  TikTokShopChecker
+	log     *log.Logger
 }
 
 // New builds a Generator. If apiKey is empty the generator is disabled and
 // Generate returns a clear error (so the rest of the app still runs).
-func New(apiKey string, tiktok TikTokShopChecker) *Generator {
-	g := &Generator{tiktok: tiktok}
+func New(apiKey string, tiktok TikTokShopChecker, logger *log.Logger) *Generator {
+	g := &Generator{tiktok: tiktok, log: logger}
+	if g.log == nil {
+		g.log = log.New(io.Discard, "", 0)
+	}
 	if tiktok == nil {
 		g.tiktok = UnconfiguredTikTok{}
 	}
@@ -105,10 +111,13 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 		return Result{}, errDisabled
 	}
 
-	brand := in.Lead.Company
+	brand := strings.TrimSpace(in.Lead.Company)
+	brandIsDomain := false
 	if brand == "" {
 		brand = domainOf(in.Lead.Email)
+		brandIsDomain = true
 	}
+	g.log.Printf("ai[%s] start (brand_from_domain=%v)", brand, brandIsDomain)
 
 	tools := []anthropic.ToolUnionParam{
 		{OfWebSearchTool20260209: &anthropic.WebSearchTool20260209Param{}},
@@ -132,11 +141,10 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 		Model:     anthropic.ModelClaudeOpus4_8,
 		MaxTokens: 8000,
 		System: []anthropic.TextBlockParam{{
-			Text: g.systemPrompt(in, brand),
+			Text: g.systemPrompt(in, brand, brandIsDomain),
 		}},
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(
-				fmt.Sprintf("Research the brand %q and write the email now. Follow the decision tree, then output ONLY the final JSON object.", brand))),
+			anthropic.NewUserMessage(anthropic.NewTextBlock(kickoff(brand, brandIsDomain))),
 		},
 		Tools: tools,
 	}
@@ -148,6 +156,7 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 			return Result{}, fmt.Errorf("claude: %w", err)
 		}
 		params.Messages = append(params.Messages, resp.ToParam())
+		g.logTurn(brand, i, resp)
 
 		switch resp.StopReason {
 		case anthropic.StopReasonPauseTurn:
@@ -165,7 +174,11 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 			params.Messages = append(params.Messages, anthropic.NewUserMessage(results...))
 			continue
 		default:
-			return parseResult(collectText(resp))
+			res, err := parseResult(collectText(resp))
+			if err == nil {
+				g.log.Printf("ai[%s] ✅ DONE template=%s — %s", brand, res.TemplateUsed, truncate(res.Reasoning, 300))
+			}
+			return res, err
 		}
 	}
 	return Result{}, errors.New("generation did not converge within iteration limit")
@@ -189,23 +202,29 @@ func (g *Generator) runCustomTools(ctx context.Context, brand string, resp *anth
 		}
 		res, err := g.tiktok.Check(ctx, q)
 		if err != nil {
+			g.log.Printf("ai[%s] check_tiktok_shop(%q) error: %v", brand, q, err)
 			results = append(results, anthropic.NewToolResultBlock(tu.ID,
 				fmt.Sprintf(`{"on_tiktok_shop":"unknown","details":%q}`, "check failed: "+err.Error()), false))
 			continue
 		}
 		out, _ := json.Marshal(res)
+		g.log.Printf("ai[%s] check_tiktok_shop(%q) -> %s", brand, q, string(out))
 		results = append(results, anthropic.NewToolResultBlock(tu.ID, string(out), false))
 	}
 	return results, nil
 }
 
-func (g *Generator) systemPrompt(in Input, brand string) string {
+func (g *Generator) systemPrompt(in Input, brand string, brandIsDomain bool) string {
 	var b strings.Builder
 	b.WriteString("You are an expert B2B cold-email copywriter for a marketing agency. ")
 	b.WriteString("You research a prospect's brand and write a single, highly personalized cold email.\n\n")
 
 	b.WriteString("LEAD / BRAND:\n")
-	fmt.Fprintf(&b, "- Brand/company: %s\n", brand)
+	if brandIsDomain {
+		fmt.Fprintf(&b, "- Website domain (NO clean company name was provided — derive the real brand name from this): %s\n", brand)
+	} else {
+		fmt.Fprintf(&b, "- Brand/company: %s\n", brand)
+	}
 	if n := strings.TrimSpace(in.Lead.FirstName + " " + in.Lead.LastName); n != "" {
 		fmt.Fprintf(&b, "- Contact name: %s\n", n)
 	}
@@ -217,6 +236,16 @@ func (g *Generator) systemPrompt(in Input, brand string) string {
 		fmt.Fprintf(&b, "- Extra fields: %s\n", string(in.Lead.CustomFields))
 	}
 	fmt.Fprintf(&b, "- Sender name (sign-off): %s\n\n", in.FromName)
+
+	if brandIsDomain {
+		fmt.Fprintf(&b, "BRAND NAME RESOLUTION (do this FIRST):\n"+
+			"We only have the website domain %q, not a clean company name. Before any other research, "+
+			"use web_search/web_fetch to determine the company's real, properly-capitalized brand name "+
+			"(e.g. \"naturalfactors.com\" is the brand \"Natural Factors\"). Use that real name for every "+
+			"tool call (including check_tiktok_shop) and everywhere in the subject and body. NEVER write a "+
+			"bare domain or URL as if it were the brand name, and replace any remaining {{brand_name}} "+
+			"placeholder with the real name.\n\n", brand)
+	}
 
 	if in.Brief != "" {
 		b.WriteString("CAMPAIGN BRIEF (offer, ICP, tone):\n")
@@ -248,8 +277,8 @@ Step 4. Use web_search to assess whether the brand has a big retail presence
 	b.WriteString("TEMPLATES (merge variables like {{first_name}} have already been filled in from this lead's data; personalize the chosen one for this specific brand and contact; keep the template's structure and intent, fill in researched specifics, never invent facts you did not verify):\n\n")
 	for _, t := range in.Templates {
 		fmt.Fprintf(&b, "TEMPLATE %s — %s\n", t.Key, firstNonEmpty(t.Name, store.TemplateDefaults[t.Key]))
-		subject := renderVars(t.Subject, in.Lead, brand)
-		body := renderVars(t.Body, in.Lead, brand)
+		subject := renderVars(t.Subject, in.Lead, brand, !brandIsDomain)
+		body := renderVars(t.Body, in.Lead, brand, !brandIsDomain)
 		if strings.TrimSpace(subject) == "" && strings.TrimSpace(body) == "" {
 			b.WriteString("(No template text provided yet — write a sensible, concise cold email that fits this template's intent described above.)\n\n")
 			continue
@@ -273,6 +302,40 @@ Step 4. Use web_search to assess whether the brand has a big retail presence
 }
 
 // --- helpers ---
+
+// kickoff is the first user message; it nudges domain-only leads to resolve the
+// real brand name before researching.
+func kickoff(brand string, brandIsDomain bool) string {
+	if brandIsDomain {
+		return fmt.Sprintf("We only have this lead's website domain: %q. First determine the company's real brand name, then follow the decision tree and write the email. Output ONLY the final JSON object.", brand)
+	}
+	return fmt.Sprintf("Research the brand %q and write the email now. Follow the decision tree, then output ONLY the final JSON object.", brand)
+}
+
+// logTurn writes a readable trace of one model turn: its visible reasoning text
+// and any tool calls it made. This is what shows "how Claude is thinking" in the
+// server logs during generation.
+func (g *Generator) logTurn(brand string, iter int, resp *anthropic.Message) {
+	for _, block := range resp.Content {
+		switch b := block.AsAny().(type) {
+		case anthropic.TextBlock:
+			if t := strings.TrimSpace(b.Text); t != "" {
+				g.log.Printf("ai[%s] i%d 💭 %s", brand, iter, truncate(t, 600))
+			}
+		case anthropic.ToolUseBlock:
+			g.log.Printf("ai[%s] i%d 🔧 %s(%s)", brand, iter, b.Name, truncate(b.JSON.Input.Raw(), 300))
+		}
+	}
+}
+
+// truncate collapses whitespace and caps length for tidy single-line log entries.
+func truncate(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
+}
 
 func collectText(resp *anthropic.Message) string {
 	var sb strings.Builder
@@ -342,17 +405,22 @@ var varRe = regexp.MustCompile(`\{\{\s*[a-zA-Z0-9_.]+\s*\}\}`)
 // the lead. Supported: first_name, last_name, full_name, company, brand_name/
 // brand, title, email, and custom.<key> (or a bare <key>) for CSV custom fields.
 // Unknown tokens are left untouched. Matching is case-insensitive.
-func renderVars(s string, lead store.Lead, brand string) string {
+func renderVars(s string, lead store.Lead, brand string, brandKnown bool) string {
 	vars := map[string]string{
 		"first_name": lead.FirstName,
 		"last_name":  lead.LastName,
 		"full_name":  strings.TrimSpace(lead.FirstName + " " + lead.LastName),
 		"name":       strings.TrimSpace(lead.FirstName + " " + lead.LastName),
-		"company":    lead.Company,
-		"brand_name": brand,
-		"brand":      brand,
 		"title":      lead.Title,
 		"email":      lead.Email,
+	}
+	// When we don't have a real brand name (only a domain), leave the brand
+	// tokens unrendered so the model fills them with the name it researches,
+	// rather than baking the raw domain into the copy.
+	if brandKnown {
+		vars["company"] = lead.Company
+		vars["brand_name"] = brand
+		vars["brand"] = brand
 	}
 	var custom map[string]any
 	if len(lead.CustomFields) > 0 {

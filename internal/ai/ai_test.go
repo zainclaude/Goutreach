@@ -23,7 +23,7 @@ func TestRenderVars(t *testing.T) {
 		"{{COMPANY}} caps-insensitive":  "Acme caps-insensitive",
 	}
 	for in, want := range cases {
-		if got := renderVars(in, lead, lead.Company); got != want {
+		if got := renderVars(in, lead, lead.Company, true); got != want {
 			t.Errorf("renderVars(%q) = %q, want %q", in, got, want)
 		}
 	}
