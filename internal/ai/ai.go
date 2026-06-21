@@ -176,6 +176,8 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 		default:
 			res, err := parseResult(collectText(resp))
 			if err == nil {
+				res.Subject = stripEmDashes(res.Subject)
+				res.Body = stripEmDashes(res.Body)
 				g.log.Printf("ai[%s] ✅ DONE template=%s — %s", brand, res.TemplateUsed, truncate(res.Reasoning, 300))
 			}
 			return res, err
@@ -296,7 +298,10 @@ Step 4. Use web_search to assess whether the brand has a big retail presence
 - Then respond with ONLY a single JSON object, no prose around it:
   {"template_used":"A|B|C|D|E","subject":"...","body":"...","reasoning":"one or two sentences on why this template and what you personalized"}
 - The body should be plain text (you may use \n for line breaks), ready to send, signed off as the sender.
-- Keep it concise and human. No placeholders like [Name] — fill everything in.`)
+- Keep it concise and human. No placeholders like [Name]; fill everything in.
+- NEVER use em dashes (—) or en dashes (–) anywhere in the subject or body. They
+  are a dead giveaway that a message was written by AI. Use commas, periods, or
+  shorter sentences instead. Plain hyphens in normal words are fine.`)
 
 	return b.String()
 }
@@ -350,6 +355,20 @@ func (g *Generator) logTurn(brand string, iter int, resp *anthropic.Message) {
 			g.log.Printf("ai[%s] i%d 🔧 %s(%s)", brand, iter, b.Name, truncate(b.JSON.Input.Raw(), 300))
 		}
 	}
+}
+
+// stripEmDashes removes em/en dashes (a common AI tell) from final copy, replacing
+// them with natural punctuation, in case the model uses one despite the prompt.
+func stripEmDashes(s string) string {
+	// Spaced dashes ("a — b") become a comma; unspaced ("a—b") too.
+	for _, d := range []string{" — ", " – ", " —", " –", "— ", "– ", "—", "–"} {
+		s = strings.ReplaceAll(s, d, ", ")
+	}
+	// Tidy artifacts from the replacement.
+	s = strings.ReplaceAll(s, " ,", ",")
+	s = strings.ReplaceAll(s, ",,", ",")
+	s = strings.ReplaceAll(s, "  ", " ")
+	return s
 }
 
 // truncate collapses whitespace and caps length for tidy single-line log entries.

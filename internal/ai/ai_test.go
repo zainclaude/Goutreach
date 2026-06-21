@@ -8,6 +8,21 @@ import (
 	"github.com/zainclaude/goutreach/internal/store"
 )
 
+func TestStripEmDashes(t *testing.T) {
+	cases := map[string]string{
+		"We saw Acme — it's growing": "We saw Acme, it's growing",
+		"fast—growing brand":         "fast, growing brand",
+		"a – b":                      "a, b",
+		"co-founder of well-being":   "co-founder of well-being", // plain hyphens kept
+		"no dashes here":             "no dashes here",
+	}
+	for in, want := range cases {
+		if got := stripEmDashes(in); got != want {
+			t.Errorf("stripEmDashes(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestTokenizeThenPersonalize(t *testing.T) {
 	jane := store.Lead{FirstName: "Jane", LastName: "Doe", Email: "jane@acme.com"}
 	body := "Hi Jane, saw Acme is crushing it. — Sam"
