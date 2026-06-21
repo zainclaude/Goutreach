@@ -123,6 +123,13 @@ function MessageRow({ m, onApprove, onReject, onSave }:
   const [open, setOpen] = useState(false);
   const [subject, setSubject] = useState(m.subject);
   const [body, setBody] = useState(m.body);
+  // Keep the editable fields in sync when generation finishes: props update via
+  // polling, but useState's initial value only applies on mount, so without this
+  // the preview stays empty until a manual refresh.
+  useEffect(() => {
+    setSubject(m.subject);
+    setBody(m.body);
+  }, [m.subject, m.body]);
   const cached = (m.research_notes || "").toLowerCase().startsWith("cached");
   return (
     <>
