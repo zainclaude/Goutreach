@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, Account, AccountStat } from "../api";
+import { api, uploadAccountsCSV, Account, AccountStat } from "../api";
 
 const blank = {
   provider: "gmail", email: "", from_name: "", password: "",
@@ -37,6 +37,19 @@ export default function Accounts() {
     try {
       const r = await api.get<{ url: string }>("/oauth/google/start");
       window.location.href = r.url;
+    } catch (e: any) { setMsg("✗ " + e.message); }
+  };
+
+  const importAccounts = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setMsg("Importing & verifying accounts…");
+    try {
+      const r = await uploadAccountsCSV(f);
+      let m = `✓ Added ${r.added}, failed ${r.failed}`;
+      if (r.errors?.length) m += ": " + r.errors.map((x: any) => `${x.email} (${x.error})`).join("; ");
+      setMsg(m);
+      load();
     } catch (e: any) { setMsg("✗ " + e.message); }
   };
 
@@ -100,6 +113,16 @@ export default function Accounts() {
             {accounts.length === 0 && <tr><td colSpan={10} className="muted">No accounts yet.</td></tr>}
           </tbody>
         </table>
+      </div>
+
+      <div className="card">
+        <h3>Bulk import accounts (CSV)</h3>
+        <p className="muted">
+          Upload a CSV to connect many mailboxes at once. Each row is verified before saving.
+          Columns: <code>email, password, provider, from_name, smtp_host, smtp_port, imap_host, imap_port, daily_limit, warmup, warmup_target</code>.
+          For Google/Outlook, just set <code>provider</code> + <code>email</code> + <code>password</code> (app password) — servers auto-fill.
+        </p>
+        <input type="file" accept=".csv" onChange={importAccounts} style={{ width: "auto" }} />
       </div>
 
       <div className="card">

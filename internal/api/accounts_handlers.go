@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zainclaude/goutreach/internal/mailer"
@@ -185,6 +188,125 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleImportAccounts bulk-connects mailboxes from a CSV. Columns (case-insensitive):
+// email, password, provider, from_name, smtp_host, smtp_port, imap_host, imap_port,
+// daily_limit, warmup, warmup_target. Each row is verified concurrently before saving.
+func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
+	body := csvReader(r)
+	if body == nil {
+		writeErr(w, http.StatusBadRequest, "no CSV provided")
+		return
+	}
+	reader := csv.NewReader(body)
+	reader.FieldsPerRecord = -1
+	rows, err := reader.ReadAll()
+	if err != nil || len(rows) < 2 {
+		writeErr(w, http.StatusBadRequest, "could not parse CSV (need a header row + at least one account)")
+		return
+	}
+
+	idx := map[string]int{}
+	for i, h := range rows[0] {
+		idx[strings.ToLower(strings.ReplaceAll(strings.TrimSpace(h), " ", "_"))] = i
+	}
+	col := func(row []string, name string) string {
+		if i, ok := idx[name]; ok && i < len(row) {
+			return strings.TrimSpace(row[i])
+		}
+		return ""
+	}
+
+	type rowErr struct {
+		Email string `json:"email"`
+		Error string `json:"error"`
+	}
+	var (
+		mu     sync.Mutex
+		added  int
+		errs   []rowErr
+		wg     sync.WaitGroup
+		sem    = make(chan struct{}, 6) // bound concurrent verifications
+		userID = s.userID(r)
+	)
+
+	for _, row := range rows[1:] {
+		email := col(row, "email")
+		if email == "" {
+			continue
+		}
+		req := accountReq{
+			Provider:           col(row, "provider"),
+			Email:              email,
+			FromName:           col(row, "from_name"),
+			Password:           col(row, "password"),
+			SMTPHost:           col(row, "smtp_host"),
+			SMTPPort:           atoiOr(col(row, "smtp_port"), 0),
+			IMAPHost:           col(row, "imap_host"),
+			IMAPPort:           atoiOr(col(row, "imap_port"), 0),
+			DailyLimit:         atoiOr(col(row, "daily_limit"), 0),
+			WarmupEnabled:      parseBool(col(row, "warmup")),
+			WarmupTargetPerDay: atoiOr(col(row, "warmup_target"), 0),
+		}
+		// Default to Gmail when no provider and no explicit SMTP host are given.
+		if req.Provider == "" && req.SMTPHost == "" {
+			req.Provider = "gmail"
+		}
+		req.applyDefaults()
+
+		wg.Add(1)
+		go func(req accountReq) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			if err := verifyCreds(req); err != nil {
+				mu.Lock()
+				errs = append(errs, rowErr{req.Email, err.Error()})
+				mu.Unlock()
+				return
+			}
+			smtpEnc, _ := s.cipher.Encrypt(req.SMTPPassword)
+			imapEnc, _ := s.cipher.Encrypt(req.IMAPPassword)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_, err := s.st.CreateAccount(ctx, store.EmailAccount{
+				UserID: userID, Email: trimLower(req.Email), FromName: req.FromName,
+				SMTPHost: req.SMTPHost, SMTPPort: req.SMTPPort, SMTPUsername: req.SMTPUsername, SMTPPasswordEnc: smtpEnc,
+				IMAPHost: req.IMAPHost, IMAPPort: req.IMAPPort, IMAPUsername: req.IMAPUsername, IMAPPasswordEnc: imapEnc,
+				DailyLimit: req.DailyLimit, WarmupEnabled: req.WarmupEnabled, WarmupTargetPerDay: req.WarmupTargetPerDay,
+			})
+			mu.Lock()
+			if err != nil {
+				errs = append(errs, rowErr{req.Email, err.Error()})
+			} else {
+				added++
+			}
+			mu.Unlock()
+		}(req)
+	}
+	wg.Wait()
+
+	writeJSON(w, http.StatusOK, map[string]any{"added": added, "failed": len(errs), "errors": errs})
+}
+
+func atoiOr(s string, def int) int {
+	if s == "" {
+		return def
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n
+	}
+	return def
+}
+
+func parseBool(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "1", "yes", "y", "on":
+		return true
+	}
+	return false
 }
 
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {

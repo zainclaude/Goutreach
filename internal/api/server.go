@@ -75,6 +75,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/", s.handleListAccounts)
 			r.Get("/stats", s.handleAccountStats)
 			r.Post("/", s.handleCreateAccount)
+			r.Post("/import", s.handleImportAccounts)
 			r.Post("/verify", s.handleVerifyAccount)
 			r.Patch("/{id}", s.handleUpdateAccount)
 			r.Delete("/{id}", s.handleDeleteAccount)

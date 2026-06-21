@@ -44,9 +44,17 @@ export const api = {
 };
 
 export async function uploadCSV(file: File) {
+  return uploadTo("/api/leads/import", file);
+}
+
+export async function uploadAccountsCSV(file: File) {
+  return uploadTo("/api/accounts/import", file);
+}
+
+async function uploadTo(path: string, file: File) {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await fetch("/api/leads/import", {
+  const res = await fetch(path, {
     method: "POST",
     headers: { Authorization: `Bearer ${getToken()}` },
     body: fd,
