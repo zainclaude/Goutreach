@@ -91,6 +91,14 @@ func (s *Server) Router() http.Handler {
 			r.Delete("/{id}", s.handleDeleteDomain)
 		})
 
+		r.Route("/maildoso", func(r chi.Router) {
+			r.Get("/ping", s.handleMaildosoPing)
+			r.Get("/domains", s.handleMaildosoListDomains)
+			r.Post("/domains", s.handleMaildosoCreateDomain)
+			r.Post("/mailboxes", s.handleMaildosoOrderMailboxes)
+			r.Post("/sync", s.handleMaildosoSync)
+		})
+
 		// Returns the Google consent URL to redirect the browser to.
 		r.Get("/oauth/google/start", s.handleGoogleStart)
 

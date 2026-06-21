@@ -27,20 +27,23 @@ type EmailAccount struct {
 	LastError            string    `json:"last_error"`
 	AuthType             string    `json:"auth_type"` // "password" | "oauth"
 	OAuthRefreshTokenEnc string    `json:"-"`
+	Source               string    `json:"source"`      // manual|csv|oauth|maildoso
+	ExternalID           string    `json:"external_id"` // vendor mailbox id, if provisioned
 	CreatedAt            time.Time `json:"created_at"`
 }
 
 const accountCols = `id, user_id, email, from_name, smtp_host, smtp_port, smtp_username,
 	smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc,
 	daily_limit, warmup_enabled, warmup_target_per_day, status, last_error,
-	auth_type, oauth_refresh_token_enc, created_at`
+	auth_type, oauth_refresh_token_enc, source, external_id, created_at`
 
 func scanAccount(row interface{ Scan(...any) error }) (EmailAccount, error) {
 	var a EmailAccount
 	err := row.Scan(&a.ID, &a.UserID, &a.Email, &a.FromName, &a.SMTPHost, &a.SMTPPort,
 		&a.SMTPUsername, &a.SMTPPasswordEnc, &a.IMAPHost, &a.IMAPPort, &a.IMAPUsername,
 		&a.IMAPPasswordEnc, &a.DailyLimit, &a.WarmupEnabled, &a.WarmupTargetPerDay,
-		&a.Status, &a.LastError, &a.AuthType, &a.OAuthRefreshTokenEnc, &a.CreatedAt)
+		&a.Status, &a.LastError, &a.AuthType, &a.OAuthRefreshTokenEnc, &a.Source,
+		&a.ExternalID, &a.CreatedAt)
 	return a, err
 }
 
@@ -49,12 +52,15 @@ func (s *Store) CreateAccount(ctx context.Context, a EmailAccount) (EmailAccount
 	if a.AuthType == "" {
 		a.AuthType = "password"
 	}
+	if a.Source == "" {
+		a.Source = "manual"
+	}
 	row := s.pool.QueryRow(ctx,
 		`INSERT INTO email_accounts
 		 (user_id, email, from_name, smtp_host, smtp_port, smtp_username, smtp_password_enc,
 		  imap_host, imap_port, imap_username, imap_password_enc, daily_limit,
-		  warmup_enabled, warmup_target_per_day, auth_type, oauth_refresh_token_enc)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+		  warmup_enabled, warmup_target_per_day, auth_type, oauth_refresh_token_enc, source, external_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		 ON CONFLICT (user_id, email) DO UPDATE SET
 		   from_name = EXCLUDED.from_name,
 		   smtp_host = EXCLUDED.smtp_host, smtp_port = EXCLUDED.smtp_port,
@@ -62,11 +68,12 @@ func (s *Store) CreateAccount(ctx context.Context, a EmailAccount) (EmailAccount
 		   imap_host = EXCLUDED.imap_host, imap_port = EXCLUDED.imap_port,
 		   imap_username = EXCLUDED.imap_username, imap_password_enc = EXCLUDED.imap_password_enc,
 		   auth_type = EXCLUDED.auth_type, oauth_refresh_token_enc = EXCLUDED.oauth_refresh_token_enc,
+		   source = EXCLUDED.source, external_id = EXCLUDED.external_id,
 		   status = 'active', last_error = ''
 		 RETURNING `+accountCols,
 		a.UserID, a.Email, a.FromName, a.SMTPHost, a.SMTPPort, a.SMTPUsername, a.SMTPPasswordEnc,
 		a.IMAPHost, a.IMAPPort, a.IMAPUsername, a.IMAPPasswordEnc, a.DailyLimit,
-		a.WarmupEnabled, a.WarmupTargetPerDay, a.AuthType, a.OAuthRefreshTokenEnc)
+		a.WarmupEnabled, a.WarmupTargetPerDay, a.AuthType, a.OAuthRefreshTokenEnc, a.Source, a.ExternalID)
 	return scanAccount(row)
 }
 

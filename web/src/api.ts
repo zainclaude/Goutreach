@@ -101,6 +101,8 @@ export interface Domain {
 export interface DomainAvailability {
   domain: string; available: boolean; price: string; premium: boolean;
 }
+export interface MaildosoDomain { id: string; domain: string; status: string; }
+export interface MaildosoSync { added: number; pending: number; failed: number; errors: { email: string; error: string }[]; }
 export interface Template { key: string; name: string; subject: string; body: string; }
 export interface Setting { key: string; value: string; is_secret: boolean; }
 export interface Reply {
