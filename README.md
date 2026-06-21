@@ -1,4 +1,4 @@
-# Goutreach
+# PipelineBuilder
 
 An AI-personalized cold email platform (an Instantly.ai-style tool) that connects email
 accounts, warms them up, imports leads, sends **fully AI-generated** cold emails to your ICP,

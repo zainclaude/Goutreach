@@ -17,7 +17,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="layout">
       <div className="sidebar">
-        <h1>Goutreach</h1>
+        <h1>PipelineBuilder</h1>
         <nav>
           <NavLink to="/" end className={link}>Dashboard</NavLink>
           <NavLink to="/campaigns" className={link}>Campaigns</NavLink>

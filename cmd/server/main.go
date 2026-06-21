@@ -1,4 +1,4 @@
-// Command server is the Goutreach backend: HTTP API + background workers.
+// Command server is the PipelineBuilder backend: HTTP API + background workers.
 package main
 
 import (

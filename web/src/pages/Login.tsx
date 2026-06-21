@@ -24,7 +24,7 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
-        <h2>Goutreach</h2>
+        <h2>PipelineBuilder</h2>
         <p className="muted">{mode === "login" ? "Sign in to your dashboard" : "Create the first account"}</p>
         <label>Email</label>
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />

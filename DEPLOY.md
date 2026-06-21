@@ -1,4 +1,4 @@
-# Deploying Goutreach
+# Deploying PipelineBuilder
 
 The app is a single Docker image (Go backend that also serves the built React
 dashboard) plus a Postgres database. Pick one platform below.

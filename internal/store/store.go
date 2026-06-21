@@ -1,4 +1,4 @@
-// Package store contains the data models and all Postgres access for Goutreach.
+// Package store contains the data models and all Postgres access for PipelineBuilder.
 package store
 
 import "github.com/jackc/pgx/v5/pgxpool"
