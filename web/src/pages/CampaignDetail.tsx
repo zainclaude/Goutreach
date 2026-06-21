@@ -116,11 +116,15 @@ function MessageRow({ m, onApprove, onReject, onSave }:
   const [open, setOpen] = useState(false);
   const [subject, setSubject] = useState(m.subject);
   const [body, setBody] = useState(m.body);
+  const cached = (m.research_notes || "").toLowerCase().startsWith("cached");
   return (
     <>
       <tr>
         <td>{m.lead_email}<div className="muted">{m.lead_company}</div></td>
-        <td>{m.template_used && <span className="tag">{m.template_used}</span>}</td>
+        <td>
+          {m.template_used && <span className="tag">{m.template_used}</span>}
+          {cached && <span className="tag" title="Reused from brand cache — no AI tokens used" style={{ marginLeft: 4 }}>♻ cached</span>}
+        </td>
         <td>{m.subject || <span className="muted">{m.status === "generating" || m.status === "queued" ? "generating…" : "—"}</span>}</td>
         <td><span className={`badge ${m.status}`}>{m.status}</span></td>
         <td>{m.approved ? "✓" : "—"}</td>
