@@ -94,6 +94,13 @@ export interface Message {
 export interface Stats {
   sent: number; opens: number; clicks: number; replies: number; bounces: number;
 }
+export interface Domain {
+  id: number; domain: string; registrar: string; status: string;
+  dns_applied: boolean; dkim_record: string; last_error: string; created_at: string;
+}
+export interface DomainAvailability {
+  domain: string; available: boolean; price: string; premium: boolean;
+}
 export interface Template { key: string; name: string; subject: string; body: string; }
 export interface Setting { key: string; value: string; is_secret: boolean; }
 export interface Reply {
