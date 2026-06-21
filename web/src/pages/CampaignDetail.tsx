@@ -96,7 +96,14 @@ export default function CampaignDetail() {
       </div>
 
       <div className="card">
-        <h3>Emails ({messages.length})</h3>
+        <h3>
+          Emails ({messages.length})
+          {messages.length > 0 && (() => {
+            const cached = messages.filter((m) => (m.research_notes || "").toLowerCase().startsWith("cached")).length;
+            const gen = messages.filter((m) => m.template_used && !(m.research_notes || "").toLowerCase().startsWith("cached")).length;
+            return <span className="muted" style={{ fontWeight: 400, fontSize: 14, marginLeft: 8 }}>· ♻ {cached} cached · {gen} generated</span>;
+          })()}
+        </h3>
         <table>
           <thead><tr><th>Lead</th><th>Tmpl</th><th>Subject</th><th>Status</th><th>Approved</th><th></th></tr></thead>
           <tbody>
