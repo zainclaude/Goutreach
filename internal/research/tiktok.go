@@ -176,14 +176,64 @@ func (c *kdClient) login(ctx context.Context, email, password string) error {
 	}, nil)
 }
 
-// searchShopID maps a brand name to its kalodata shop id.
-//
-// TODO(kalodata): wire the shop-search endpoint. The captured HAR was taken on a
-// shop detail page, so it didn't include the name->id search call. Once that
-// request is captured, fill this in (POST the keyword, read the first match's
-// id). Until then it returns "" so queryKalodata falls through gracefully.
+// searchShopID maps a brand name to its kalodata shop id via the full-text
+// search endpoint, which returns sellers ranked by relevance.
 func (c *kdClient) searchShopID(ctx context.Context, brand string) (string, error) {
-	return "", nil
+	body := map[string]any{
+		"country_code": "us",
+		"keyword":      brand,
+		"scope":        []any{map[string]any{"index": "seller", "pageNo": 1, "pageSize": 10}},
+	}
+	var out struct {
+		Seller []sellerHit `json:"seller"`
+	}
+	if err := c.post(ctx, "/overview/fullText/search", body, &out); err != nil {
+		return "", err
+	}
+	return pickSellerID(brand, out.Seller), nil
+}
+
+// sellerHit is one match from /overview/fullText/search (already score-sorted).
+type sellerHit struct {
+	SellerID   string  `json:"seller_id"`
+	SellerName string  `json:"seller_name"`
+	GMVin30    float64 `json:"gmv_in_30"`
+	Score      float64 `json:"score"`
+}
+
+// pickSellerID chooses the right seller for a brand name. It prefers an exact
+// normalized name match (and since hits are score-sorted, the first such match is
+// the most relevant — e.g. the real "MaryRuth's" over a $0 duplicate), then falls
+// back to the top hit only when its name overlaps the brand. No confident match
+// returns "" so the caller omits the markers rather than use the wrong shop.
+func pickSellerID(brand string, hits []sellerHit) string {
+	want := normName(brand)
+	if want == "" {
+		return ""
+	}
+	for _, s := range hits {
+		if normName(s.SellerName) == want {
+			return s.SellerID
+		}
+	}
+	if len(hits) > 0 {
+		tn := normName(hits[0].SellerName)
+		if tn != "" && (strings.Contains(tn, want) || strings.Contains(want, tn)) {
+			return hits[0].SellerID
+		}
+	}
+	return ""
+}
+
+// normName lowercases and strips everything but letters/digits for fuzzy matching.
+func normName(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // kdMetrics holds the three figures the A#* markers need.

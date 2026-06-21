@@ -24,6 +24,31 @@ func TestParseKM(t *testing.T) {
 	}
 }
 
+func TestPickSellerID(t *testing.T) {
+	// Mirrors the real /overview/fullText/search response for "MaryRuth's":
+	// exact normalized match must win the real shop over the $0 duplicate.
+	mary := []sellerHit{
+		{SellerID: "real", SellerName: "MaryRuth's", GMVin30: 3947765, Score: 82},
+		{SellerID: "kids", SellerName: "MaryRuth's - Kids", GMVin30: 174174, Score: 54},
+		{SellerID: "dup", SellerName: "Maryruths", GMVin30: 0, Score: 17},
+	}
+	if got := pickSellerID("MaryRuth's", mary); got != "real" {
+		t.Errorf("MaryRuth's -> %q, want real", got)
+	}
+	// Containment fallback: "bissell" -> "BISSELL Clean".
+	bissell := []sellerHit{{SellerID: "b1", SellerName: "BISSELL Clean", Score: 70}}
+	if got := pickSellerID("bissell", bissell); got != "b1" {
+		t.Errorf("bissell -> %q, want b1", got)
+	}
+	// No confident match -> empty (don't grab the wrong shop).
+	if got := pickSellerID("Totally Unrelated Co", bissell); got != "" {
+		t.Errorf("unrelated -> %q, want empty", got)
+	}
+	if got := pickSellerID("anything", nil); got != "" {
+		t.Errorf("no hits -> %q, want empty", got)
+	}
+}
+
 func TestLast30(t *testing.T) {
 	start, end := last30()
 	const f = "2006-01-02"
