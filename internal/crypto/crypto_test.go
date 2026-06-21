@@ -34,9 +34,21 @@ func TestEncryptProducesDistinctCiphertext(t *testing.T) {
 	}
 }
 
-func TestNewRejectsShortKey(t *testing.T) {
-	if _, err := New("tooshort"); err == nil {
-		t.Fatal("expected error for short key")
+func TestNewRejectsEmptyKey(t *testing.T) {
+	if _, err := New(""); err == nil {
+		t.Fatal("expected error for empty key")
+	}
+}
+
+func TestNewAcceptsAnyNonEmptyKey(t *testing.T) {
+	c, err := New("short")
+	if err != nil {
+		t.Fatalf("expected short non-empty key to be accepted: %v", err)
+	}
+	enc, _ := c.Encrypt("secret")
+	dec, _ := c.Decrypt(enc)
+	if dec != "secret" {
+		t.Fatal("round trip failed with short key")
 	}
 }
 

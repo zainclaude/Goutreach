@@ -1,9 +1,6 @@
 package config
 
-import (
-	"fmt"
-	"os"
-)
+import "os"
 
 // Config holds all runtime configuration, loaded from the environment.
 type Config struct {
@@ -16,25 +13,44 @@ type Config struct {
 }
 
 // Load reads configuration from environment variables, applying defaults where
-// sensible and returning an error when a required value is missing.
+// sensible. It understands PaaS conventions: HTTP_ADDR falls back to $PORT, and
+// APP_URL falls back to $RENDER_EXTERNAL_URL.
 func Load() (Config, error) {
 	c := Config{
 		DatabaseURL:   env("DATABASE_URL", "postgres://goutreach:goutreach@localhost:5432/goutreach?sslmode=disable"),
-		HTTPAddr:      env("HTTP_ADDR", ":8080"),
-		AppURL:        env("APP_URL", "http://localhost:8080"),
+		HTTPAddr:      httpAddr(),
+		AppURL:        appURL(),
 		AnthropicKey:  os.Getenv("ANTHROPIC_API_KEY"),
 		EncryptionKey: os.Getenv("ENCRYPTION_KEY"),
 		JWTSecret:     env("JWT_SECRET", "dev-insecure-jwt-secret-change-me"),
 	}
-
 	if c.EncryptionKey == "" {
 		// Dev-only fallback so the app boots locally; production must set this.
-		c.EncryptionKey = "0123456789abcdef0123456789abcdef"
-	}
-	if len(c.EncryptionKey) < 32 {
-		return c, fmt.Errorf("ENCRYPTION_KEY must be at least 32 bytes, got %d", len(c.EncryptionKey))
+		c.EncryptionKey = "dev-insecure-encryption-key-change-me"
 	}
 	return c, nil
+}
+
+// httpAddr prefers HTTP_ADDR, then $PORT (Render/Railway/Fly), then :8080.
+func httpAddr() string {
+	if a := os.Getenv("HTTP_ADDR"); a != "" {
+		return a
+	}
+	if p := os.Getenv("PORT"); p != "" {
+		return ":" + p
+	}
+	return ":8080"
+}
+
+// appURL prefers APP_URL, then $RENDER_EXTERNAL_URL, then localhost.
+func appURL() string {
+	if u := os.Getenv("APP_URL"); u != "" {
+		return u
+	}
+	if u := os.Getenv("RENDER_EXTERNAL_URL"); u != "" {
+		return u
+	}
+	return "http://localhost:8080"
 }
 
 func env(key, def string) string {

@@ -6,9 +6,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 )
 
@@ -17,13 +17,15 @@ type Cipher struct {
 	aead cipher.AEAD
 }
 
-// New builds a Cipher from a key. The key must be at least 32 bytes; the first
-// 32 bytes are used (AES-256).
+// New builds a Cipher from a key of any non-empty length. The key is hashed with
+// SHA-256 to derive a 32-byte AES-256 key, so platform-generated secrets of any
+// length work.
 func New(key string) (*Cipher, error) {
-	if len(key) < 32 {
-		return nil, fmt.Errorf("key must be >= 32 bytes, got %d", len(key))
+	if key == "" {
+		return nil, errors.New("encryption key must not be empty")
 	}
-	block, err := aes.NewCipher([]byte(key)[:32])
+	sum := sha256.Sum256([]byte(key))
+	block, err := aes.NewCipher(sum[:])
 	if err != nil {
 		return nil, err
 	}

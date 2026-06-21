@@ -1,0 +1,32 @@
+# Render blueprint: one Docker web service + a managed Postgres database.
+# Deploy: push this branch to GitHub, then in Render -> "New +" -> "Blueprint",
+# point it at the repo. Render reads this file and provisions everything.
+databases:
+  - name: goutreach-db
+    databaseName: goutreach
+    user: goutreach
+    plan: free
+
+services:
+  - type: web
+    name: goutreach
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: goutreach-db
+          property: connectionString
+      # Generated automatically and kept stable across deploys.
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      # Set this in the Render dashboard (Environment tab) to enable AI generation.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Note: Render injects RENDER_EXTERNAL_URL automatically; the app reads it
+      # for open/click tracking links, so no APP_URL is needed here.
