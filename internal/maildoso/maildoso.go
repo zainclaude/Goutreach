@@ -71,15 +71,16 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 		buf = b
 	}
 
-	// Retry transport-level failures (Maildoso's edge intermittently answers
-	// without a valid TLS handshake). HTTP status errors are not retried.
+	// Retry transport-level failures (Maildoso's edge has nodes that intermittently
+	// answer without a valid TLS handshake; a fresh connection may hit a good one).
+	// HTTP status errors are not retried.
 	var lastErr error
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 8; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(time.Duration(attempt) * 400 * time.Millisecond):
+			case <-time.After(time.Duration(attempt) * 300 * time.Millisecond):
 			}
 		}
 
