@@ -41,6 +41,11 @@ func New(apiKey, baseURL string) *Client {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	// Tolerate a host entered without a scheme (e.g. "developers.maildoso.com").
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
 	// Fresh connection per request: Maildoso's edge intermittently returns a
 	// non-TLS response on some connections, and reusing a poisoned pooled
 	// connection would make that sticky.
@@ -48,7 +53,7 @@ func New(apiKey, baseURL string) *Client {
 	tr.DisableKeepAlives = true
 	return &Client{
 		apiKey:  apiKey,
-		baseURL: strings.TrimRight(baseURL, "/"),
+		baseURL: baseURL,
 		http:    &http.Client{Timeout: 30 * time.Second, Transport: tr},
 	}
 }
