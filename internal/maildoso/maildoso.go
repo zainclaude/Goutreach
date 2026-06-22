@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	// Base URL confirmed via GET /v1/user/me (api.* / mcp.* are not the REST host).
-	DefaultBaseURL = "https://app.maildoso.com"
+	// Maildoso's Scalar docs use relative URLs, so the REST API is served from the
+	// docs origin. (app.* is the SPA; api.*/mcp.* are wildcard hosts with no TLS.)
+	DefaultBaseURL = "https://developers.maildoso.com"
 
 	pathMe             = "/v1/user/me"
 	pathDomains        = "/v1/user/domains"
@@ -85,9 +86,19 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	return nil
 }
 
-// VerifyKey checks the PAT works (GET /v1/user/me).
+// VerifyKey checks the PAT works and that the base URL points at the real API
+// (GET /v1/user/me must return a JSON user, not an SPA's HTML page).
 func (c *Client) VerifyKey(ctx context.Context) error {
-	return c.do(ctx, http.MethodGet, pathMe, nil, nil)
+	var out struct {
+		ID *int64 `json:"id"`
+	}
+	if err := c.do(ctx, http.MethodGet, pathMe, nil, &out); err != nil {
+		return err
+	}
+	if out.ID == nil {
+		return fmt.Errorf("%s returned no user id — base URL is probably not the API host", pathMe)
+	}
+	return nil
 }
 
 // Domain is a sending domain in the Maildoso account.
