@@ -58,7 +58,7 @@ export default function Domains() {
     try {
       const d = await api.get<MaildosoDomain[]>("/maildoso/domains");
       setMdDomains(d || []);
-      if ((d || []).length && !mdDomainId) setMdDomainId(d[0].id);
+      if ((d || []).length && !mdDomainId) setMdDomainId(d[0].domain_name);
       if (!(d || []).length) setMdMsg("No domains in Maildoso yet — add one below.");
     } catch (e: any) { setMdMsg("✗ " + e.message); }
   };
@@ -79,7 +79,7 @@ export default function Domains() {
     if (!confirm(`Order ${parts.length} mailbox(es) on this domain via Maildoso? This charges your Maildoso account.`)) return;
     setMdMsg("Ordering mailboxes…");
     try {
-      const r = await api.post<{ ordered: number }>("/maildoso/mailboxes", { domain_id: mdDomainId, local_parts: parts });
+      const r = await api.post<{ ordered: number }>("/maildoso/mailboxes", { domain: mdDomainId, local_parts: parts });
       setMdMsg(`✓ Ordered ${r.ordered} mailbox(es). When provisioning finishes, click "Sync" to connect them.`);
     } catch (e: any) { setMdMsg("✗ " + e.message); }
   };
@@ -264,7 +264,7 @@ export default function Domains() {
           <button className="secondary" onClick={loadMdDomains}>Load Maildoso domains</button>
           {mdDomains.length > 0 && (
             <select value={mdDomainId} onChange={(e) => setMdDomainId(e.target.value)}>
-              {mdDomains.map((d) => <option key={d.id} value={d.id}>{d.domain} ({d.status})</option>)}
+              {mdDomains.map((d) => <option key={d.id} value={d.domain_name}>{d.domain_name} ({d.status})</option>)}
             </select>
           )}
         </div>

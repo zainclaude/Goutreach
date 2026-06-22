@@ -78,8 +78,7 @@ func (s *Server) handleMaildosoCreateDomain(w http.ResponseWriter, r *http.Reque
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	d, err := mc.CreateDomain(r.Context(), domain)
-	if err != nil {
+	if err := mc.CreateDomain(r.Context(), domain); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -87,30 +86,31 @@ func (s *Server) handleMaildosoCreateDomain(w http.ResponseWriter, r *http.Reque
 	_, _ = s.st.CreateDomain(r.Context(), store.Domain{
 		UserID: s.userID(r), Domain: domain, Registrar: "maildoso", Status: "purchased",
 	})
-	writeJSON(w, http.StatusOK, d)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // handleMaildosoOrderMailboxes provisions mailboxes on a Maildoso domain. Local
-// parts are the part before the @ (e.g. "jane.doe"). Provisioning may be async,
-// so the response mailboxes can lack credentials until a later sync.
+// parts are the part before the @ (e.g. "jane.doe"); the domain is the full
+// domain name. Provisioning is async, so credentials appear on a later sync.
 func (s *Server) handleMaildosoOrderMailboxes(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		DomainID   string   `json:"domain_id"`
+		Domain     string   `json:"domain"`
 		LocalParts []string `json:"local_parts"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if req.DomainID == "" || len(req.LocalParts) == 0 {
-		writeErr(w, http.StatusBadRequest, "domain_id and at least one local_part required")
+	domain := normalizeDomain(req.Domain)
+	if domain == "" || len(req.LocalParts) == 0 {
+		writeErr(w, http.StatusBadRequest, "domain and at least one inbox name required")
 		return
 	}
-	specs := make([]maildoso.MailboxSpec, 0, len(req.LocalParts))
+	emails := make([]string, 0, len(req.LocalParts))
 	for _, lp := range req.LocalParts {
-		lp = strings.TrimSpace(lp)
+		lp = strings.TrimSpace(strings.TrimSuffix(lp, "@"+domain))
 		if lp != "" {
-			specs = append(specs, maildoso.MailboxSpec{LocalPart: lp})
+			emails = append(emails, lp+"@"+domain)
 		}
 	}
 	mc, err := s.maildosoClient(r.Context(), s.userID(r))
@@ -118,12 +118,11 @@ func (s *Server) handleMaildosoOrderMailboxes(w http.ResponseWriter, r *http.Req
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	mbs, err := mc.CreateMailboxes(r.Context(), req.DomainID, specs)
-	if err != nil {
+	if err := mc.CreateMailboxes(r.Context(), emails, "maildoso"); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ordered": len(mbs), "mailboxes": mbs})
+	writeJSON(w, http.StatusOK, map[string]any{"ordered": len(emails)})
 }
 
 // handleMaildosoSync pulls every Maildoso mailbox that has credentials and
@@ -157,22 +156,27 @@ func (s *Server) handleMaildosoSync(w http.ResponseWriter, r *http.Request) {
 	)
 
 	for _, mb := range mbs {
-		if mb.Email == "" {
+		if mb.Email == "" || mb.Password == "" {
+			pending++ // not provisioned yet — no credentials to connect
 			continue
 		}
-		// Not provisioned yet — no credentials to connect.
-		if mb.Password == "" || mb.SMTPHost == "" {
-			pending++
-			continue
-		}
-		req := accountReq{
-			Provider: "custom",
-			Email:    mb.Email,
-			Password: mb.Password,
-			SMTPHost: mb.SMTPHost, SMTPPort: mb.SMTPPort,
-			IMAPHost: mb.IMAPHost, IMAPPort: mb.IMAPPort,
+		req := accountReq{Email: mb.Email, Password: mb.Password}
+		if strings.EqualFold(mb.Provider, "google") {
+			// Google Workspace mailbox: gmail presets fill SMTP/IMAP hosts.
+			req.Provider = "gmail"
+		} else {
+			// Maildoso-hosted: it returns the IMAP host; derive SMTP from it.
+			if mb.IMAP != nil {
+				req.IMAPHost = mb.IMAP.Host
+				req.IMAPPort = mb.IMAP.Port
+				req.SMTPHost = strings.Replace(mb.IMAP.Host, "imap", "smtp", 1)
+			}
 		}
 		req.applyDefaults()
+		if req.SMTPHost == "" || req.IMAPHost == "" {
+			pending++ // host info not available yet
+			continue
+		}
 
 		wg.Add(1)
 		go func(req accountReq, extID string) {
@@ -204,7 +208,7 @@ func (s *Server) handleMaildosoSync(w http.ResponseWriter, r *http.Request) {
 				added++
 			}
 			mu.Unlock()
-		}(req, mb.ID)
+		}(req, fmt.Sprintf("%d", mb.ID))
 	}
 	wg.Wait()
 
