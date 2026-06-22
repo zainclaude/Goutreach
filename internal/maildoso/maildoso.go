@@ -41,10 +41,15 @@ func New(apiKey, baseURL string) *Client {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
+	// Fresh connection per request: Maildoso's edge intermittently returns a
+	// non-TLS response on some connections, and reusing a poisoned pooled
+	// connection would make that sticky.
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DisableKeepAlives = true
 	return &Client{
 		apiKey:  apiKey,
 		baseURL: strings.TrimRight(baseURL, "/"),
-		http:    &http.Client{Timeout: 30 * time.Second},
+		http:    &http.Client{Timeout: 30 * time.Second, Transport: tr},
 	}
 }
 
@@ -52,38 +57,59 @@ func New(apiKey, baseURL string) *Client {
 func (c *Client) Configured() bool { return c.apiKey != "" }
 
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
-	var body io.Reader
+	var buf []byte
 	if in != nil {
-		buf, err := json.Marshal(in)
+		b, err := json.Marshal(in)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewReader(buf)
+		buf = b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "application/json")
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s: http %d: %s", path, resp.StatusCode, snippet(raw))
-	}
-	if out != nil && len(raw) > 0 {
-		if err := json.Unmarshal(raw, out); err != nil {
-			return fmt.Errorf("%s: decode: %w", path, err)
+
+	// Retry transport-level failures (Maildoso's edge intermittently answers
+	// without a valid TLS handshake). HTTP status errors are not retried.
+	var lastErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 400 * time.Millisecond):
+			}
 		}
+
+		var body io.Reader
+		if buf != nil {
+			body = bytes.NewReader(buf)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		req.Header.Set("Accept", "application/json")
+		if buf != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = err // transport error -> retry
+			continue
+		}
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("%s: http %d: %s", path, resp.StatusCode, snippet(raw))
+		}
+		if out != nil && len(raw) > 0 {
+			if err := json.Unmarshal(raw, out); err != nil {
+				return fmt.Errorf("%s: decode: %w", path, err)
+			}
+		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("%s: %w (after retries)", path, lastErr)
 }
 
 // VerifyKey checks the PAT works and that the base URL points at the real API
