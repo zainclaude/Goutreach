@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	// DefaultBaseURL is a best guess; confirm/override via maildoso_base_url.
-	DefaultBaseURL = "https://api.maildoso.com"
+	// Base URL confirmed via GET /v1/user/me (api.* / mcp.* are not the REST host).
+	DefaultBaseURL = "https://app.maildoso.com"
 
 	pathMe             = "/v1/user/me"
 	pathDomains        = "/v1/user/domains"
