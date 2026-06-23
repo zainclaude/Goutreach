@@ -18,7 +18,17 @@ func (s *Server) handleApproveMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRejectMessage(w http.ResponseWriter, r *http.Request) {
-	if err := s.st.DeleteMessage(r.Context(), idParam(r)); err != nil {
+	id := idParam(r)
+	// Clear any cached brand email for this lead's domain+step so a rejected
+	// email is never reused — the next generation rebuilds it from scratch.
+	if msg, err := s.st.GetMessage(r.Context(), id); err == nil {
+		if cl, err := s.st.GetCampaignLead(r.Context(), msg.CampaignLeadID); err == nil {
+			if lead, err := s.st.GetLead(r.Context(), cl.LeadID); err == nil {
+				_ = s.st.DeleteBrandEmail(r.Context(), s.userID(r), store.NormalizeDomain(lead.Email), msg.StepIndex)
+			}
+		}
+	}
+	if err := s.st.DeleteMessage(r.Context(), id); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

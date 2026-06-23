@@ -42,6 +42,15 @@ func (s *Store) GetBrandEmail(ctx context.Context, userID int64, domain string, 
 	return b, true, nil
 }
 
+// DeleteBrandEmail removes the cached brand email for a domain+step so the next
+// generation rebuilds it from scratch. Used when a preview is rejected.
+func (s *Store) DeleteBrandEmail(ctx context.Context, userID int64, domain string, step int) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM brand_emails WHERE user_id=$1 AND domain=$2 AND step_index=$3`,
+		userID, domain, step)
+	return err
+}
+
 // SaveBrandEmail stores a brand email. First write wins (reuse forever); an
 // existing entry for the same domain+step is left untouched.
 func (s *Store) SaveBrandEmail(ctx context.Context, b BrandEmail) error {
