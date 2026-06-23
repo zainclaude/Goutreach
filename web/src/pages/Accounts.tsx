@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, uploadAccountsCSV, Account, AccountStat } from "../api";
+import { api, uploadAccountsCSV, Account, AccountStat, WarmupStat } from "../api";
 
 const blank = {
   provider: "gmail", email: "", from_name: "", password: "",
@@ -11,6 +11,7 @@ const blank = {
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [stats, setStats] = useState<Record<number, AccountStat>>({});
+  const [warmup, setWarmup] = useState<WarmupStat[]>([]);
   const [form, setForm] = useState({ ...blank });
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
@@ -23,6 +24,7 @@ export default function Accounts() {
       (s || []).forEach((x) => (m[x.account_id] = x));
       setStats(m);
     });
+    api.get<WarmupStat[]>("/accounts/warmup-stats").then((w) => setWarmup(w || [])).catch(() => {});
   };
   useEffect(() => {
     load();
@@ -114,6 +116,33 @@ export default function Accounts() {
           </tbody>
         </table>
       </div>
+
+      {warmup.length > 0 && (
+        <div className="card">
+          <h3>Warmup results <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>(last 30 days)</span></h3>
+          <table>
+            <thead><tr>
+              <th>Email</th><th>Warmup</th><th>Sent today</th><th>Sent (30d)</th><th>Inbox</th><th>Spam</th><th>Inbox rate</th>
+            </tr></thead>
+            <tbody>
+              {warmup.map((w) => (
+                <tr key={w.account_id}>
+                  <td>{w.email}</td>
+                  <td>{w.warmup_enabled ? <span className="badge active">on</span> : <span className="muted">off</span>}</td>
+                  <td>{w.sent_today}</td>
+                  <td>{w.sent}</td>
+                  <td>{w.inbox}</td>
+                  <td>{w.spam > 0 ? <span className="err">{w.spam}</span> : 0}{w.pending > 0 && <span className="muted"> (+{w.pending} pending)</span>}</td>
+                  <td>{(w.inbox + w.spam) > 0 ? (w.inbox_rate * 100).toFixed(0) + "%" : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted" style={{ marginTop: 8 }}>
+            Placement is measured across your own connected inboxes: warmup mail found in a recipient's spam folder is counted as spam (and auto-rescued to the inbox). "Pending" = sent but landing not yet detected.
+          </p>
+        </div>
+      )}
 
       <div className="card">
         <h3>Bulk import accounts (CSV)</h3>

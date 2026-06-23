@@ -74,6 +74,7 @@ func (s *Server) Router() http.Handler {
 		r.Route("/accounts", func(r chi.Router) {
 			r.Get("/", s.handleListAccounts)
 			r.Get("/stats", s.handleAccountStats)
+			r.Get("/warmup-stats", s.handleWarmupStats)
 			r.Post("/", s.handleCreateAccount)
 			r.Post("/import", s.handleImportAccounts)
 			r.Post("/verify", s.handleVerifyAccount)

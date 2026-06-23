@@ -58,16 +58,36 @@ func (p *Poller) pollAccount(ctx context.Context, acc store.EmailAccount) error 
 	if err != nil {
 		return err
 	}
-	return mailer.Poll(ctx, creds, 50, func(in mailer.InboundMessage) error {
+	if err := mailer.Poll(ctx, creds, 50, func(in mailer.InboundMessage) error {
 		return p.handleInbound(ctx, acc, in)
+	}); err != nil {
+		return err
+	}
+
+	// Detect warmup mail that landed in spam, rescue it to the inbox, and record
+	// the spam placement for the warmup results view.
+	found, err := mailer.ScanSpamForWarmup(ctx, creds, func(mid string) bool {
+		ok, _ := p.st.FindWarmupByMessageID(ctx, mid)
+		return ok
 	})
+	if err != nil {
+		p.log.Printf("poller: spam scan %s: %v", acc.Email, err)
+		return nil
+	}
+	for _, mid := range found {
+		_ = p.st.SetWarmupStatusByMessageID(ctx, mid, "spam")
+	}
+	return nil
 }
 
 func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in mailer.InboundMessage) error {
 	// Warmup mail we sent: marking it Seen (handled by Poll) is the warmup "open".
 	// Reply to a fraction of warmup mail to build two-way reputation.
 	if in.MessageID != "" {
-		if isWarmup, _ := p.st.FindWarmupByMessageID(ctx, in.MessageID); isWarmup {
+		mid := mailer.NormalizeMessageID(in.MessageID)
+		if isWarmup, _ := p.st.FindWarmupByMessageID(ctx, mid); isWarmup {
+			// It reached the inbox (the poller only reads INBOX) — record placement.
+			_ = p.st.SetWarmupStatusByMessageID(ctx, mid, "received")
 			if rand.Float64() < 0.4 {
 				p.replyWarmup(ctx, acc, in)
 			}

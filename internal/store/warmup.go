@@ -28,3 +28,61 @@ func (s *Store) FindWarmupByMessageID(ctx context.Context, messageID string) (bo
 		`SELECT EXISTS(SELECT 1 FROM warmup_messages WHERE message_id=$1)`, messageID).Scan(&exists)
 	return exists, err
 }
+
+// SetWarmupStatusByMessageID records where a warmup message landed
+// (received = inbox, spam = junk folder). Keyed by message_id (the sender's row).
+func (s *Store) SetWarmupStatusByMessageID(ctx context.Context, messageID, status string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE warmup_messages SET status=$2 WHERE message_id=$1`, messageID, status)
+	return err
+}
+
+// WarmupStat is per-account warmup placement over the last 30 days.
+type WarmupStat struct {
+	AccountID int64   `json:"account_id"`
+	Email     string  `json:"email"`
+	Enabled   bool    `json:"warmup_enabled"`
+	Sent      int     `json:"sent"`
+	Inbox     int     `json:"inbox"`
+	Spam      int     `json:"spam"`
+	Pending   int     `json:"pending"`    // sent but placement not yet detected
+	InboxRate float64 `json:"inbox_rate"` // inbox / (inbox+spam)
+	SentToday int     `json:"sent_today"`
+}
+
+// WarmupStats returns per-account warmup placement (by sending account) for the
+// user, over the last 30 days.
+func (s *Store) WarmupStats(ctx context.Context, userID int64) ([]WarmupStat, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT a.id, a.email, a.warmup_enabled,
+		  count(w.id)                                              AS sent,
+		  count(w.id) FILTER (WHERE w.status='received')          AS inbox,
+		  count(w.id) FILTER (WHERE w.status='spam')              AS spam,
+		  count(w.id) FILTER (WHERE w.created_at >= date_trunc('day', now())) AS sent_today
+		FROM email_accounts a
+		LEFT JOIN warmup_messages w
+		  ON w.from_account_id = a.id AND w.created_at >= now() - interval '30 days'
+		WHERE a.user_id=$1
+		GROUP BY a.id, a.email, a.warmup_enabled
+		ORDER BY a.id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WarmupStat
+	for rows.Next() {
+		var st WarmupStat
+		if err := rows.Scan(&st.AccountID, &st.Email, &st.Enabled, &st.Sent, &st.Inbox, &st.Spam, &st.SentToday); err != nil {
+			return nil, err
+		}
+		st.Pending = st.Sent - st.Inbox - st.Spam
+		if st.Pending < 0 {
+			st.Pending = 0
+		}
+		if placed := st.Inbox + st.Spam; placed > 0 {
+			st.InboxRate = float64(st.Inbox) / float64(placed)
+		}
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}

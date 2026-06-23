@@ -75,6 +75,11 @@ export interface AccountStat {
   sent_today: number; sent_lifetime: number;
   replies_today: number; replies_lifetime: number; reply_rate: number;
 }
+export interface WarmupStat {
+  account_id: number; email: string; warmup_enabled: boolean;
+  sent: number; inbox: number; spam: number; pending: number;
+  inbox_rate: number; sent_today: number;
+}
 export interface Lead {
   id: number; email: string; first_name: string; last_name: string;
   company: string; title: string; status: string;

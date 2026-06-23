@@ -110,6 +110,75 @@ func VerifyIMAP(ctx context.Context, creds IMAPCreds) error {
 	return c.Logout().Wait()
 }
 
+// NormalizeMessageID strips angle brackets/whitespace so message-ids compare
+// consistently regardless of how the server formats them.
+func NormalizeMessageID(s string) string {
+	return strings.Trim(strings.TrimSpace(s), "<>")
+}
+
+var spamFolderNames = []string{"[Gmail]/Spam", "Junk", "Junk Email", "Spam", "Bulk Mail"}
+
+// ScanSpamForWarmup looks in the account's spam/junk folder for warmup messages
+// (isWarmup matches a normalized Message-ID), rescues them to the inbox (marking
+// them seen so they aren't re-counted as inbox), and returns their Message-IDs so
+// the caller can record them as spam placements. Best-effort: returns nil if no
+// spam folder exists or it can't be read.
+func ScanSpamForWarmup(ctx context.Context, creds IMAPCreds, isWarmup func(messageID string) bool) ([]string, error) {
+	c, err := dialIMAP(creds)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Logout().Wait()
+
+	var selected bool
+	for _, name := range spamFolderNames {
+		if _, err := c.Select(name, nil).Wait(); err == nil {
+			selected = true
+			break
+		}
+	}
+	if !selected {
+		return nil, nil // no spam folder on this provider
+	}
+
+	sd, err := c.UIDSearch(&imap.SearchCriteria{Since: time.Now().Add(-14 * 24 * time.Hour)}, nil).Wait()
+	if err != nil {
+		return nil, fmt.Errorf("spam search: %w", err)
+	}
+	uids := sd.AllUIDs()
+	if len(uids) == 0 {
+		return nil, nil
+	}
+
+	msgs, err := c.Fetch(imap.UIDSetNum(uids...), &imap.FetchOptions{Envelope: true}).Collect()
+	if err != nil {
+		return nil, fmt.Errorf("spam fetch: %w", err)
+	}
+
+	var found []string
+	var rescue []imap.UID
+	for _, m := range msgs {
+		if m.Envelope == nil {
+			continue
+		}
+		mid := NormalizeMessageID(m.Envelope.MessageID)
+		if mid != "" && isWarmup(mid) {
+			found = append(found, mid)
+			rescue = append(rescue, m.UID)
+		}
+	}
+	if len(rescue) > 0 {
+		set := imap.UIDSetNum(rescue...)
+		// Mark seen first so the rescued copy isn't re-detected as an inbox landing.
+		_ = c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close()
+		if _, err := c.Move(set, "INBOX").Wait(); err != nil {
+			// MOVE unsupported on some servers; the spam status is still recorded.
+			_ = err
+		}
+	}
+	return found, nil
+}
+
 // Poll fetches UNSEEN messages from INBOX, invokes handle for each, and marks
 // successfully-handled messages as \Seen so they are not reprocessed.
 func Poll(ctx context.Context, creds IMAPCreds, max int, handle func(InboundMessage) error) error {

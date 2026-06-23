@@ -157,6 +157,15 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, acc)
 }
 
+func (s *Server) handleWarmupStats(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.st.WarmupStats(r.Context(), s.userID(r))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
 func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	accs, err := s.st.ListAccounts(r.Context(), s.userID(r))
 	if err != nil {
