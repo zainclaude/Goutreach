@@ -198,17 +198,39 @@ func pickShop(brand string, list []map[string]any) map[string]any {
 	if want == "" || len(list) == 0 {
 		return nil
 	}
+	// Exact normalized name first (best precision), checking every result.
 	for _, s := range list {
 		if normName(firstStr(s, nameKeys...)) == want {
 			return s
 		}
 	}
+	// Otherwise the top (most keyword-relevant) hit if its name fuzzy-matches —
+	// handles "Mary Ruth's" vs "MaryRuth Organics".
 	top := list[0]
-	tn := normName(firstStr(top, nameKeys...))
-	if tn != "" && (strings.Contains(tn, want) || strings.Contains(want, tn)) {
+	if nameMatches(want, normName(firstStr(top, nameKeys...))) {
 		return top
 	}
 	return nil
+}
+
+// nameMatches is a lenient brand-name comparison: equal, one contains the other,
+// or a strong shared prefix (>=5 chars and at least half of the shorter name).
+func nameMatches(want, got string) bool {
+	if want == "" || got == "" {
+		return false
+	}
+	if want == got || strings.Contains(got, want) || strings.Contains(want, got) {
+		return true
+	}
+	cp := 0
+	for cp < len(want) && cp < len(got) && want[cp] == got[cp] {
+		cp++
+	}
+	min := len(want)
+	if len(got) < min {
+		min = len(got)
+	}
+	return cp >= 5 && cp*2 >= min
 }
 
 func normName(s string) string {

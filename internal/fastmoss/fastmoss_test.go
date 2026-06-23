@@ -74,3 +74,21 @@ func TestEnvelopeErrorSurfaced(t *testing.T) {
 		t.Fatalf("expected surfaced API error, got %v", err)
 	}
 }
+
+func TestNameMatches(t *testing.T) {
+	cases := []struct {
+		want, got string
+		ok        bool
+	}{
+		{"maryruths", "maryruthorganics", true}, // Mary Ruth's vs MaryRuth Organics
+		{"saltstick", "saltstick", true},
+		{"nike", "nikeofficialstore", true},
+		{"maryruths", "totallydifferentco", false},
+		{"apple", "", false},
+	}
+	for _, c := range cases {
+		if got := nameMatches(c.want, c.got); got != c.ok {
+			t.Errorf("nameMatches(%q,%q)=%v want %v", c.want, c.got, got, c.ok)
+		}
+	}
+}
