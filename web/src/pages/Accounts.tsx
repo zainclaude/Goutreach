@@ -113,7 +113,12 @@ export default function Accounts() {
                     <input type="checkbox" style={{ width: "auto" }} defaultChecked={a.warmup_enabled}
                       onChange={(e) => saveSettings(a, a.daily_limit, e.target.checked, a.warmup_target_per_day)} />
                   </td>
-                  <td><span className={`badge ${a.status}`}>{a.status}</span></td>
+                  <td>
+                    <span className={`badge ${a.status}`} title={a.last_error || undefined}>{a.status}</span>
+                    {a.status !== "active" && a.last_error && (
+                      <div className="muted" style={{ fontSize: 11, maxWidth: 260, marginTop: 2 }}>{a.last_error}</div>
+                    )}
+                  </td>
                   <td><button className="danger" onClick={() => remove(a.id)}>×</button></td>
                 </tr>
               );
