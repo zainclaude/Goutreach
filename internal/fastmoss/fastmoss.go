@@ -135,21 +135,29 @@ func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error
 	if shop == nil {
 		return Metrics{}, nil // not found on TikTok Shop
 	}
-	shopID := firstStr(shop, "shop_id", "id", "seller_id")
+	shopID := firstStr(shop, "seller_id", "shop_id", "id")
 	if shopID == "" {
 		return Metrics{}, nil
 	}
 
 	m := Metrics{
 		Found:      true,
-		ShopName:   firstStr(shop, "shop_name", "name", "title"),
-		RevenueUSD: firstNum(shop, "usd_gmv", "shop_usd_gmv", "gmv", "revenue", "total_gmv"),
+		ShopName:   firstStr(shop, nameKeys...),
+		RevenueUSD: firstNum(shop, "total_gmv", "usd_gmv", "shop_usd_gmv", "gmv", "revenue"),
+		// Affiliate/creator count comes back on the shop search result itself.
+		Creators: int(firstNum(shop, "affiliate_creator_count", "creator_count", "creator_num")),
 	}
-	c.logf("fastmoss: matched shop=%s name=%q gmv=%.0f", shopID, m.ShopName, m.RevenueUSD)
-	m.Creators = c.shopTotal(ctx, pathShopCreator, shopID, month)
+	c.logf("fastmoss: matched shop=%s name=%q gmv=%.0f affiliates=%d", shopID, m.ShopName, m.RevenueUSD, m.Creators)
+	// If the search didn't carry an affiliate count, fall back to the list endpoint.
+	if m.Creators == 0 {
+		m.Creators = c.shopTotal(ctx, pathShopCreator, shopID, month)
+	}
 	m.Videos = c.shopTotal(ctx, pathShopVideo, shopID, month)
 	return m, nil
 }
+
+// nameKeys are the candidate fields a shop's display name may appear under.
+var nameKeys = []string{"brand", "shop_name", "name", "creator_name", "title"}
 
 // shopTotal returns data.total for a shop-scoped list endpoint (creators/videos)
 // over the given month. Returns 0 on error (metric simply omitted upstream); the
@@ -160,7 +168,7 @@ func (c *Client) shopTotal(ctx context.Context, path, shopID, month string) int 
 	}
 	body := map[string]any{
 		"filter": map[string]any{
-			"shop_id":   shopID,
+			"seller_id": shopID,
 			"date_info": map[string]any{"type": "month", "value": month},
 		},
 		"page": 1, "pagesize": 1,
@@ -191,12 +199,12 @@ func pickShop(brand string, list []map[string]any) map[string]any {
 		return nil
 	}
 	for _, s := range list {
-		if normName(firstStr(s, "shop_name", "name", "title")) == want {
+		if normName(firstStr(s, nameKeys...)) == want {
 			return s
 		}
 	}
 	top := list[0]
-	tn := normName(firstStr(top, "shop_name", "name", "title"))
+	tn := normName(firstStr(top, nameKeys...))
 	if tn != "" && (strings.Contains(tn, want) || strings.Contains(want, tn)) {
 		return top
 	}

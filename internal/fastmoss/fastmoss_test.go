@@ -21,17 +21,15 @@ func TestBrandMetricsFlow(t *testing.T) {
 
 		switch r.URL.Path {
 		case pathShopSearch:
-			// returns two shops; the exact-name one ("MaryRuth's") must win.
+			// Real FastMoss shop fields: brand, seller_id, total_gmv, affiliate_creator_count.
 			_, _ = w.Write([]byte(`{"code":0,"data":{"total":2,"list":[
-				{"shop_id":"S1","shop_name":"MaryRuth's","usd_gmv":3947765.35},
-				{"shop_id":"S2","shop_name":"MaryRuth's - Kids","usd_gmv":1000}
+				{"seller_id":"S1","brand":"MaryRuth's","total_gmv":3947765.35,"affiliate_creator_count":11649},
+				{"seller_id":"S2","brand":"MaryRuth's - Kids","total_gmv":1000,"affiliate_creator_count":3}
 			]}}`))
-		case pathShopCreator:
-			if f, _ := req["filter"].(map[string]any); f["shop_id"] != "S1" {
-				t.Errorf("creatorList shop_id = %v", f["shop_id"])
-			}
-			_, _ = w.Write([]byte(`{"code":0,"data":{"total":11649,"list":[]}}`))
 		case pathShopVideo:
+			if f, _ := req["filter"].(map[string]any); f["seller_id"] != "S1" {
+				t.Errorf("videoList seller_id = %v", f["seller_id"])
+			}
 			_, _ = w.Write([]byte(`{"code":0,"data":{"total":17120,"list":[]}}`))
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
@@ -54,7 +52,7 @@ func TestBrandMetricsFlow(t *testing.T) {
 
 func TestBrandMetricsNoMatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"code":0,"data":{"total":1,"list":[{"shop_id":"X","shop_name":"Totally Different Co"}]}}`))
+		_, _ = w.Write([]byte(`{"code":0,"data":{"total":1,"list":[{"seller_id":"X","brand":"Totally Different Co"}]}}`))
 	}))
 	defer srv.Close()
 	m, err := New("k", srv.URL).BrandMetrics(context.Background(), "MaryRuth's")
