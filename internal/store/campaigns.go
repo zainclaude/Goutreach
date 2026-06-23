@@ -222,6 +222,40 @@ func (s *Store) EnrollLeads(ctx context.Context, campaignID int64, leadIDs []int
 	return added, nil
 }
 
+// CampaignLeadDetail is an enrolled lead with its enrollment state, for display.
+type CampaignLeadDetail struct {
+	LeadID      int64  `json:"lead_id"`
+	Email       string `json:"email"`
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	Company     string `json:"company"`
+	Status      string `json:"status"`
+	CurrentStep int    `json:"current_step"`
+}
+
+// ListCampaignLeadDetails returns the leads enrolled in a campaign with their
+// enrollment status and current step.
+func (s *Store) ListCampaignLeadDetails(ctx context.Context, campaignID int64) ([]CampaignLeadDetail, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT l.id, l.email, l.first_name, l.last_name, l.company, cl.status, cl.current_step
+		FROM campaign_leads cl JOIN leads l ON l.id = cl.lead_id
+		WHERE cl.campaign_id=$1
+		ORDER BY l.id DESC`, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CampaignLeadDetail
+	for rows.Next() {
+		var d CampaignLeadDetail
+		if err := rows.Scan(&d.LeadID, &d.Email, &d.FirstName, &d.LastName, &d.Company, &d.Status, &d.CurrentStep); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // UnenrollAllLeads removes every lead from a campaign, cascading to their
 // generated/sent message rows. Returns how many enrollments were removed.
 func (s *Store) UnenrollAllLeads(ctx context.Context, campaignID int64) (int, error) {
