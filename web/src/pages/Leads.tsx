@@ -17,8 +17,12 @@ export default function Leads() {
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    try { const r = await uploadCSV(f); setMsg(`Imported ${r.imported}, updated ${r.updated}, skipped ${r.skipped}`); load(); }
-    catch (e: any) { setMsg(e.message); }
+    try {
+      const r = await uploadCSV(f);
+      let m = `Imported ${r.imported}, updated ${r.updated}, skipped ${r.skipped}`;
+      if (r.blacklisted > 0) m += ` — ⚠️ ${r.blacklisted} not added (blacklisted domain): ${(r.blacklisted_emails || []).join(", ")}`;
+      setMsg(m); load();
+    } catch (e: any) { setMsg(e.message); }
   };
   const remove = async (id: number) => { await api.del(`/leads/${id}`); load(); };
 
@@ -45,18 +49,21 @@ export default function Leads() {
       <div className="card">
         <div className="flex-between"><h3>All leads ({leads.length})</h3></div>
         <table>
-          <thead><tr><th>Email</th><th>Name</th><th>Company</th><th>Title</th><th></th></tr></thead>
+          <thead><tr><th>Email</th><th>Status</th><th>Name</th><th>Company</th><th>Title</th><th></th></tr></thead>
           <tbody>
             {leads.map((l) => (
               <tr key={l.id}>
                 <td>{l.email}</td>
+                <td>{l.contacted
+                  ? <span className="badge bounced" title="Emailed before">contacted</span>
+                  : <span className="badge active" title="Never emailed">uncontacted</span>}</td>
                 <td>{l.first_name} {l.last_name}</td>
                 <td>{l.company}</td>
                 <td>{l.title}</td>
                 <td><button className="danger" onClick={() => remove(l.id)}>×</button></td>
               </tr>
             ))}
-            {leads.length === 0 && <tr><td colSpan={5} className="muted">No leads yet.</td></tr>}
+            {leads.length === 0 && <tr><td colSpan={6} className="muted">No leads yet.</td></tr>}
           </tbody>
         </table>
       </div>

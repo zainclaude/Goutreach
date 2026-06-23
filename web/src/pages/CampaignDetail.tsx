@@ -70,11 +70,18 @@ export default function CampaignDetail() {
       messages.filter((m) => m.status === "generated" || m.status === "sent").map((m) => m.lead_email)
     );
     const unseen = enrolled.filter((e) => !previewed.has(e.email)).length;
+    const contacted = enrolled.filter((e) => e.contacted);
     let prompt = "Launch campaign? Approved previews + remaining leads will start sending.";
+    const warnings: string[] = [];
     if (unseen > 0) {
-      prompt = `⚠️ ${unseen} of ${enrolled.length} enrolled leads have NOT been previewed.\n\n` +
-        `Their emails will be generated and sent automatically WITHOUT your review. ` +
-        `Generate previews for them first if you want to see every email.\n\nLaunch anyway?`;
+      warnings.push(`• ${unseen} of ${enrolled.length} enrolled leads have NOT been previewed — their emails will be generated and sent WITHOUT your review.`);
+    }
+    if (contacted.length > 0) {
+      const names = contacted.slice(0, 5).map((e) => e.email).join(", ");
+      warnings.push(`• ${contacted.length} enrolled lead(s) have already been emailed before: ${names}${contacted.length > 5 ? ", …" : ""}`);
+    }
+    if (warnings.length > 0) {
+      prompt = `⚠️ Before launching:\n\n${warnings.join("\n\n")}\n\nLaunch anyway?`;
     }
     if (!confirm(prompt)) return;
     await api.post(`/campaigns/${cid}/launch`); setMsg("Launched 🚀"); loadCampaign();
@@ -160,6 +167,7 @@ export default function CampaignDetail() {
               <label key={l.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "2px 0", opacity: isEnrolled ? 0.6 : 1 }}>
                 <input type="checkbox" style={{ width: "auto" }} checked={selected.includes(l.id)} disabled={isEnrolled} onChange={() => toggleSelected(l.id)} />
                 <span>{l.email}{l.company && <span className="muted"> · {l.company}</span>}</span>
+                <ContactedBadge contacted={l.contacted} />
                 {isEnrolled && <span className="tag" style={{ marginLeft: "auto" }}>✓ in campaign</span>}
               </label>
               );
@@ -181,7 +189,10 @@ export default function CampaignDetail() {
             <tbody>
               {enrolled.map((e) => (
                 <tr key={e.lead_id}>
-                  <td>{e.email}{(e.first_name || e.last_name) && <div className="muted">{[e.first_name, e.last_name].filter(Boolean).join(" ")}</div>}</td>
+                  <td>
+                    {e.email} <ContactedBadge contacted={e.contacted} />
+                    {(e.first_name || e.last_name) && <div className="muted">{[e.first_name, e.last_name].filter(Boolean).join(" ")}</div>}
+                  </td>
                   <td>{e.company || <span className="muted">—</span>}</td>
                   <td><span className={`badge ${e.status}`}>{e.status}</span></td>
                   <td>{e.current_step + 1}</td>
@@ -214,6 +225,12 @@ export default function CampaignDetail() {
       </div>
     </div>
   );
+}
+
+function ContactedBadge({ contacted }: { contacted: boolean }) {
+  return contacted
+    ? <span className="badge bounced" title="This lead has been emailed before">contacted</span>
+    : <span className="badge active" title="This lead has never been emailed">uncontacted</span>;
 }
 
 function MessageRow({ m, onApprove, onReject, onSave }:

@@ -55,6 +55,24 @@ export default function Settings() {
         ))}
         {msg && <p className="ok">{msg}</p>}
       </div>
+
+      <div className="card">
+        <h3>Blacklist (never email)</h3>
+        <p className="muted">
+          One domain per line (or comma-separated). Leads on these domains are blocked when importing/adding,
+          and skipped at send time if added later. Email addresses work too — only the domain is used
+          (e.g. <code>competitor.com</code> or <code>joe@competitor.com</code>).
+        </p>
+        <textarea
+          style={{ minHeight: 120, fontFamily: "monospace" }}
+          placeholder={"competitor.com\nexample.net"}
+          value={vals["blacklist_domains"] || ""}
+          onChange={(e) => setVals({ ...vals, blacklist_domains: e.target.value })}
+        />
+        <div className="row" style={{ marginTop: 8 }}>
+          <button onClick={() => save("blacklist_domains", false)}>Save blacklist</button>
+        </div>
+      </div>
     </div>
   );
 }

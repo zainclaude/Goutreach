@@ -1,6 +1,48 @@
 package store
 
-import "context"
+import (
+	"context"
+	"strings"
+)
+
+// NormalizeDomain lowercases and reduces an email or URL to a bare domain:
+// "Mary@Sub.MaryRuths.com" -> "sub.maryruths.com", "https://www.x.com/p" -> "x.com".
+func NormalizeDomain(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if i := strings.LastIndex(s, "@"); i >= 0 {
+		s = s[i+1:] // email local-part -> domain
+	}
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "http://")
+	s = strings.TrimPrefix(s, "www.")
+	if i := strings.IndexAny(s, "/?#"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
+}
+
+// BlacklistedDomains returns the set of domains the user never wants to email,
+// parsed from the "blacklist_domains" setting (comma/space/newline separated).
+func (s *Store) BlacklistedDomains(ctx context.Context, userID int64) (map[string]bool, error) {
+	raw, ok, err := s.GetSetting(ctx, userID, "blacklist_domains")
+	set := map[string]bool{}
+	if err != nil || !ok {
+		return set, err
+	}
+	for _, f := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\r' || r == ' ' || r == ';' || r == '\t'
+	}) {
+		if d := NormalizeDomain(f); d != "" {
+			set[d] = true
+		}
+	}
+	return set, nil
+}
+
+// IsBlacklisted reports whether an email's domain is in the blacklist set.
+func IsBlacklisted(set map[string]bool, email string) bool {
+	return len(set) > 0 && set[NormalizeDomain(email)]
+}
 
 // Setting is a key/value configuration entry, optionally secret.
 type Setting struct {

@@ -18,7 +18,13 @@ type Lead struct {
 	CustomFields json.RawMessage `json:"custom_fields"`
 	Status       string          `json:"status"`
 	CreatedAt    time.Time       `json:"created_at"`
+	Contacted    bool            `json:"contacted"` // has ever had an email actually sent
 }
+
+// contactedExpr is true when a lead has a message that was actually sent (in any
+// campaign). Reused by lead/enrollment list queries to show a contacted badge.
+const contactedExpr = `EXISTS(SELECT 1 FROM campaign_leads cl JOIN messages m ON m.campaign_lead_id=cl.id
+	WHERE cl.lead_id = leads.id AND m.status IN ('sent','replied','bounced'))`
 
 const leadCols = `id, user_id, email, first_name, last_name, company, title, custom_fields, status, created_at`
 
@@ -55,15 +61,17 @@ func (s *Store) UpsertLead(ctx context.Context, l Lead) (Lead, bool, error) {
 // ListLeads returns leads for a user.
 func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT `+leadCols+` FROM leads WHERE user_id=$1 ORDER BY id DESC`, userID)
+		`SELECT `+leadCols+`, `+contactedExpr+` AS contacted
+		 FROM leads WHERE user_id=$1 ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []Lead
 	for rows.Next() {
-		l, err := scanLead(rows)
-		if err != nil {
+		var l Lead
+		if err := rows.Scan(&l.ID, &l.UserID, &l.Email, &l.FirstName, &l.LastName, &l.Company,
+			&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt, &l.Contacted); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

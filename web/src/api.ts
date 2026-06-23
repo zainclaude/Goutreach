@@ -83,7 +83,7 @@ export interface WarmupStat {
 }
 export interface Lead {
   id: number; email: string; first_name: string; last_name: string;
-  company: string; title: string; status: string;
+  company: string; title: string; status: string; contacted: boolean;
 }
 export interface Campaign {
   id: number; name: string; brief: string; status: string;
@@ -93,7 +93,7 @@ export interface Campaign {
 }
 export interface CampaignLeadDetail {
   lead_id: number; email: string; first_name: string; last_name: string;
-  company: string; status: string; current_step: number;
+  company: string; status: string; current_step: number; contacted: boolean;
 }
 export interface Step { step_index: number; delay_days: number; angle: string; }
 export interface Message {

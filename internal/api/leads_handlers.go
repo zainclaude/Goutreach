@@ -33,6 +33,10 @@ func (s *Server) handleCreateLead(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "email required")
 		return
 	}
+	if bl, _ := s.st.BlacklistedDomains(r.Context(), s.userID(r)); store.IsBlacklisted(bl, req.Email) {
+		writeErr(w, http.StatusBadRequest, "domain is blacklisted: "+store.NormalizeDomain(req.Email))
+		return
+	}
 	l, _, err := s.st.UpsertLead(r.Context(), store.Lead{
 		UserID:    s.userID(r),
 		Email:     trimLower(req.Email),
@@ -78,11 +82,18 @@ func (s *Server) handleImportLeads(w http.ResponseWriter, r *http.Request) {
 	}
 	known := map[string]bool{"email": true, "first_name": true, "last_name": true, "company": true, "title": true}
 
+	blacklist, _ := s.st.BlacklistedDomains(r.Context(), s.userID(r))
+
 	imported, updated, skipped := 0, 0, 0
+	var blacklisted []string
 	for _, row := range rows[1:] {
 		email := col(row, "email")
 		if email == "" {
 			skipped++
+			continue
+		}
+		if store.IsBlacklisted(blacklist, email) {
+			blacklisted = append(blacklisted, strings.ToLower(email))
 			continue
 		}
 		custom := map[string]string{}
@@ -111,7 +122,10 @@ func (s *Server) handleImportLeads(w http.ResponseWriter, r *http.Request) {
 			updated++
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"imported": imported, "updated": updated, "skipped": skipped})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"imported": imported, "updated": updated, "skipped": skipped,
+		"blacklisted": len(blacklisted), "blacklisted_emails": blacklisted,
+	})
 }
 
 func (s *Server) handleDeleteLead(w http.ResponseWriter, r *http.Request) {
