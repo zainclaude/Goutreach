@@ -71,13 +71,18 @@ func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	return out, rows.Err()
 }
 
-// ListUnenrolledLeads returns leads that have never been enrolled in ANY campaign
-// (i.e., not yet contacted), so they can be added without double-emailing someone
-// already in a sequence.
-func (s *Store) ListUnenrolledLeads(ctx context.Context, userID int64) ([]Lead, error) {
+// ListUnemailedLeads returns leads that have never actually been *sent* an email
+// (no message in a sent/replied/bounced state). Leads that were only previewed —
+// enrolled with a draft that was never sent (queued/generating/generated/failed) —
+// still count as unemailed, so "enroll all unemailed" picks them up.
+func (s *Store) ListUnemailedLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT `+leadCols+` FROM leads
-		 WHERE user_id=$1 AND id NOT IN (SELECT lead_id FROM campaign_leads)
+		 WHERE user_id=$1 AND id NOT IN (
+		   SELECT cl.lead_id FROM campaign_leads cl
+		   JOIN messages m ON m.campaign_lead_id = cl.id
+		   WHERE m.status IN ('sent','replied','bounced')
+		 )
 		 ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err

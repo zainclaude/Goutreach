@@ -190,10 +190,11 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	ids := req.LeadIDs
 	if req.All || req.Unemailed {
-		// "all" enrolls every lead; "unemailed" only those never enrolled before.
+		// "all" enrolls every lead; "unemailed" only those never actually sent to
+		// (previewed-but-unsent leads still count as unemailed).
 		list := s.st.ListLeads
 		if req.Unemailed {
-			list = s.st.ListUnenrolledLeads
+			list = s.st.ListUnemailedLeads
 		}
 		leads, err := list(r.Context(), s.userID(r))
 		if err != nil {
