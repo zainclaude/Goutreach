@@ -131,8 +131,14 @@ func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error
 		return Metrics{}, err
 	}
 	c.logf("fastmoss: search %q returned %d shops; keys of top hit: %v", brand, len(search.List), keysOf(search.List))
+	if len(search.List) > 0 {
+		if b, err := json.Marshal(search.List[0]); err == nil {
+			c.logf("fastmoss: top result raw: %s", clip(string(b), 700))
+		}
+	}
 	shop := pickShop(brand, search.List)
 	if shop == nil {
+		c.logf("fastmoss: no shop matched %q (want=%q)", brand, normName(brand))
 		return Metrics{}, nil // not found on TikTok Shop
 	}
 	shopID := firstStr(shop, "seller_id", "shop_id", "id")
@@ -282,9 +288,12 @@ func firstNum(m map[string]any, keys ...string) float64 {
 }
 
 func snippet(b []byte) string {
-	s := strings.TrimSpace(string(b))
-	if len(s) > 300 {
-		s = s[:300]
+	return clip(strings.TrimSpace(string(b)), 300)
+}
+
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "…"
 	}
 	return s
 }
