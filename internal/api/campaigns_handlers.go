@@ -213,6 +213,21 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"enrolled": added})
 }
 
+// handleUnenrollAll removes every lead from a campaign (and their draft messages).
+func (s *Server) handleUnenrollAll(w http.ResponseWriter, r *http.Request) {
+	id := idParam(r)
+	if _, err := s.st.GetCampaign(r.Context(), s.userID(r), id); err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	removed, err := s.st.UnenrollAllLeads(r.Context(), id)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
+}
+
 // handlePreview generates (without sending) the first N step-0 emails so the
 // user can review them before launching. Generation runs in the background;
 // poll GET /campaigns/{id}/messages to see results.

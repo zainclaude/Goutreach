@@ -123,6 +123,7 @@ func (s *Server) Router() http.Handler {
 			r.Put("/{id}/steps", s.handleSetSteps)
 			r.Put("/{id}/accounts", s.handleSetCampaignAccounts)
 			r.Post("/{id}/enroll", s.handleEnroll)
+			r.Delete("/{id}/enroll", s.handleUnenrollAll)
 			r.Post("/{id}/preview", s.handlePreview)
 			r.Post("/{id}/launch", s.handleLaunch)
 			r.Get("/{id}/messages", s.handleCampaignMessages)

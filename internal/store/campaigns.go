@@ -222,6 +222,16 @@ func (s *Store) EnrollLeads(ctx context.Context, campaignID int64, leadIDs []int
 	return added, nil
 }
 
+// UnenrollAllLeads removes every lead from a campaign, cascading to their
+// generated/sent message rows. Returns how many enrollments were removed.
+func (s *Store) UnenrollAllLeads(ctx context.Context, campaignID int64) (int, error) {
+	ct, err := s.pool.Exec(ctx, `DELETE FROM campaign_leads WHERE campaign_id=$1`, campaignID)
+	if err != nil {
+		return 0, err
+	}
+	return int(ct.RowsAffected()), nil
+}
+
 // DueCampaignLeads returns active enrollments for running campaigns whose next_send_at has passed.
 func (s *Store) DueCampaignLeads(ctx context.Context, limit int) ([]CampaignLead, error) {
 	rows, err := s.pool.Query(ctx,

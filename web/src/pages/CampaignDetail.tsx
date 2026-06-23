@@ -39,6 +39,11 @@ export default function CampaignDetail() {
   };
   const enrollAll = async () => { const r = await api.post<{ enrolled: number }>(`/campaigns/${cid}/enroll`, { all: true }); setMsg(`Enrolled ${r.enrolled} leads`); };
   const enrollUnemailed = async () => { const r = await api.post<{ enrolled: number }>(`/campaigns/${cid}/enroll`, { unemailed: true }); setMsg(`Enrolled ${r.enrolled} previously-uncontacted leads`); loadLeads(); };
+  const removeAll = async () => {
+    if (!confirm("Remove ALL leads from this campaign? This also clears their generated drafts.")) return;
+    const r = await api.del<{ removed: number }>(`/campaigns/${cid}/enroll`);
+    setMsg(`Removed ${r.removed} leads`); loadMessages();
+  };
   const toggleSelected = (lid: number) => setSelected((s) => s.includes(lid) ? s.filter((x) => x !== lid) : [...s, lid]);
   const enrollSelected = async () => {
     if (selected.length === 0) { setMsg("No leads selected"); return; }
@@ -101,6 +106,7 @@ export default function CampaignDetail() {
           <button className="secondary" onClick={enrollAll}>Enroll all leads</button>
           <button className="secondary" onClick={enrollUnemailed}>Enroll all unemailed leads</button>
           <button className="secondary" onClick={() => setShowPicker(!showPicker)}>{showPicker ? "Hide lead picker" : "Select leads…"}</button>
+          <button className="danger" onClick={removeAll}>Remove all leads</button>
           <button className="secondary" onClick={preview}>Generate {campaign.approval_count} previews</button>
           <button onClick={launch}>Approve & launch</button>
         </div>
