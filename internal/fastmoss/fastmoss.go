@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -121,8 +122,6 @@ func (c *Client) VerifyKey(ctx context.Context) error {
 // BrandMetrics resolves a brand to a shop and returns its GMV + creator/video
 // counts for the trailing month.
 func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error) {
-	month := time.Now().UTC().Format("2006-01")
-
 	var search struct {
 		Total int              `json:"total"`
 		List  []map[string]any `json:"list"`
@@ -164,9 +163,15 @@ func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error
 	c.logf("fastmoss: matched shop=%s name=%q gmv=%.0f affiliates=%d", shopID, m.ShopName, m.RevenueUSD, m.Creators)
 	// If the search didn't carry an affiliate count, fall back to the list endpoint.
 	if m.Creators == 0 {
-		m.Creators = c.shopTotal(ctx, pathShopCreator, shopID, month)
+		m.Creators = c.shopTotal(ctx, pathShopCreator, map[string]any{"seller_id": shopID})
 	}
-	m.Videos = c.shopTotal(ctx, pathShopVideo, shopID, month)
+	// Videos the shop posted in the trailing 30 days. videoList has no date_info
+	// field — the time window is create_time_range in unix seconds.
+	now := time.Now().Unix()
+	m.Videos = c.shopTotal(ctx, pathShopVideo, map[string]any{
+		"seller_id":         shopID,
+		"create_time_range": map[string]any{"min": now - 30*24*3600, "max": now},
+	})
 	return m, nil
 }
 
@@ -174,22 +179,31 @@ func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error
 var nameKeys = []string{"brand", "shop_name", "name", "creator_name", "title"}
 
 // shopTotal returns data.total for a shop-scoped list endpoint (creators/videos)
-// over the given month. Returns 0 on error (metric simply omitted upstream); the
-// call + result + any error is logged so a wrong shop field is diagnosable.
-func (c *Client) shopTotal(ctx context.Context, path, shopID, month string) int {
+// using the supplied filter. Returns 0 on error (metric simply omitted upstream);
+// the call + result + any error is logged so a wrong field is diagnosable.
+func (c *Client) shopTotal(ctx context.Context, path string, filter map[string]any) int {
 	var out struct {
-		Total int `json:"total"`
+		Total json.RawMessage `json:"total"` // number on some endpoints, quoted string on others
 	}
 	body := map[string]any{
-		"filter": map[string]any{
-			"seller_id": shopID,
-			"date_info": map[string]any{"type": "month", "value": month},
-		},
-		"page": 1, "pagesize": 10, // pagesize must be in [10,100]; we only read data.total
+		"filter": filter,
+		"page":   1, "pagesize": 10, // pagesize must be in [10,100]; we only read data.total
 	}
 	err := c.post(ctx, path, body, &out)
-	c.logf("fastmoss: %s shop=%s month=%s -> total=%d err=%v", path, shopID, month, out.Total, err)
-	return out.Total
+	total := flexInt(out.Total)
+	c.logf("fastmoss: %s filter=%v -> total=%d err=%v", path, filter, total, err)
+	return total
+}
+
+// flexInt parses an integer the API may return as either a JSON number (shop
+// search) or a quoted string (videoList's data.total).
+func flexInt(raw json.RawMessage) int {
+	s := strings.Trim(strings.TrimSpace(string(raw)), `"`)
+	if s == "" || s == "null" {
+		return 0
+	}
+	n, _ := strconv.Atoi(s)
+	return n
 }
 
 // keysOf lists the field names of the first result, to reveal the actual shop

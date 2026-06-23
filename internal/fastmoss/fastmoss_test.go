@@ -27,10 +27,15 @@ func TestBrandMetricsFlow(t *testing.T) {
 				{"seller_id":"S2","brand":"MaryRuth's - Kids","total_gmv":1000,"affiliate_creator_count":3}
 			]}}`))
 		case pathShopVideo:
-			if f, _ := req["filter"].(map[string]any); f["seller_id"] != "S1" {
+			f, _ := req["filter"].(map[string]any)
+			if f["seller_id"] != "S1" {
 				t.Errorf("videoList seller_id = %v", f["seller_id"])
 			}
-			_, _ = w.Write([]byte(`{"code":0,"data":{"total":17120,"list":[]}}`))
+			if _, ok := f["create_time_range"]; !ok {
+				t.Errorf("videoList missing create_time_range filter")
+			}
+			// Real API returns total as a quoted string here.
+			_, _ = w.Write([]byte(`{"code":0,"data":{"total":"17120","list":[]}}`))
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
