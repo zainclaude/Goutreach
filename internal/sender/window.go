@@ -2,6 +2,7 @@ package sender
 
 import (
 	"time"
+	_ "time/tzdata" // embed the tz database so LoadLocation works regardless of base image
 
 	"github.com/zainclaude/goutreach/internal/store"
 )

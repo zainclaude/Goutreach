@@ -33,7 +33,7 @@ func (s *Server) handleCreateCampaign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Timezone == "" {
-		req.Timezone = "UTC"
+		req.Timezone = "America/New_York" // EST/EDT by default
 	}
 	if req.SendEndHour == 0 {
 		req.SendEndHour = 17

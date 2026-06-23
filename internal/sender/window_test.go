@@ -39,3 +39,16 @@ func TestNextWindowOpen(t *testing.T) {
 		t.Errorf("expected Monday 9am, got %v", next)
 	}
 }
+
+func TestSendWindowHonorsEastern(t *testing.T) {
+	c := store.Campaign{Timezone: "America/New_York", SendStartHour: 9, SendEndHour: 17, SendWeekdays: []int32{1, 2, 3, 4, 5}}
+	// Wed 2026-06-24, 18:00 UTC = 14:00 EDT -> inside the EST window.
+	// (If tzdata didn't load and it fell back to UTC, 18:00 would be OUT, failing this.)
+	if !inSendWindow(c, time.Date(2026, 6, 24, 18, 0, 0, 0, time.UTC)) {
+		t.Error("18:00 UTC (14:00 EDT, Wed) should be inside the Eastern window")
+	}
+	// Wed 2026-06-24, 02:00 UTC = 22:00 EDT Tue -> outside.
+	if inSendWindow(c, time.Date(2026, 6, 24, 2, 0, 0, 0, time.UTC)) {
+		t.Error("02:00 UTC (22:00 EDT) should be outside the window")
+	}
+}
