@@ -109,10 +109,12 @@ type Metrics struct {
 }
 
 // VerifyKey checks the client_secret works by issuing a tiny shop search.
+// The search term goes in the top-level "keywords" field (filter has no
+// "keyword" key), and pagesize must be in [10,100].
 func (c *Client) VerifyKey(ctx context.Context) error {
 	var out json.RawMessage
 	return c.post(ctx, pathShopSearch, map[string]any{
-		"filter": map[string]any{"region": "US", "keyword": "nike"}, "page": 1, "pagesize": 1,
+		"keywords": "nike", "filter": map[string]any{"region": "US"}, "page": 1, "pagesize": 10,
 	}, &out)
 }
 
@@ -125,8 +127,14 @@ func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error
 		Total int              `json:"total"`
 		List  []map[string]any `json:"list"`
 	}
+	// The search term is the top-level "keywords" (fuzzy match); filter.keyword
+	// is not a real field, so sending it there returns an unfiltered default
+	// list. Order by total GMV so the largest matching shop surfaces first.
 	if err := c.post(ctx, pathShopSearch, map[string]any{
-		"filter": map[string]any{"region": "US", "keyword": brand}, "page": 1, "pagesize": 10,
+		"keywords": brand,
+		"filter":   map[string]any{"region": "US"},
+		"orderby":  []map[string]any{{"field": "total_gmv", "order": "desc"}},
+		"page":     1, "pagesize": 10,
 	}, &search); err != nil {
 		return Metrics{}, err
 	}
