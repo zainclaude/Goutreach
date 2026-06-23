@@ -185,7 +185,7 @@ func (c *Client) shopTotal(ctx context.Context, path, shopID, month string) int 
 			"seller_id": shopID,
 			"date_info": map[string]any{"type": "month", "value": month},
 		},
-		"page": 1, "pagesize": 1,
+		"page": 1, "pagesize": 10, // pagesize must be in [10,100]; we only read data.total
 	}
 	err := c.post(ctx, path, body, &out)
 	c.logf("fastmoss: %s shop=%s month=%s -> total=%d err=%v", path, shopID, month, out.Total, err)

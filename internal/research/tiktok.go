@@ -395,11 +395,21 @@ func queryFastmossAPI(ctx context.Context, logger *log.Logger, secret, brand str
 		return unknown, nil
 	}
 	rev, creators, videos := m.RevenueUSD, m.Creators, m.Videos
-	return ai.TikTokShopResult{
-		OnTikTokShop:      "yes",
-		Details:           fmt.Sprintf("fastmoss: %s — monthly GMV $%.0f, %d creators, %d videos", brand, rev, creators, videos),
-		MonthlyRevenueUSD: &rev,
-		ActiveAffiliates:  &creators,
-		Videos30d:         &videos,
-	}, nil
+	res := ai.TikTokShopResult{
+		OnTikTokShop: "yes",
+		Details:      fmt.Sprintf("fastmoss: %s — monthly GMV $%.0f, %d creators, %d videos", brand, rev, creators, videos),
+	}
+	// Only surface metrics that came back non-zero. A 0 here means the value was
+	// unavailable (e.g. an endpoint returned nothing), not a real zero, so leave
+	// it nil and let the generator omit that marker rather than writing "0".
+	if rev > 0 {
+		res.MonthlyRevenueUSD = &rev
+	}
+	if creators > 0 {
+		res.ActiveAffiliates = &creators
+	}
+	if videos > 0 {
+		res.Videos30d = &videos
+	}
+	return res, nil
 }
