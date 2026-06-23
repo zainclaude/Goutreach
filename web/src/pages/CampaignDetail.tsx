@@ -39,6 +39,10 @@ export default function CampaignDetail() {
     setAccountIDs(next);
     await api.put(`/campaigns/${cid}/accounts`, { account_ids: next });
   };
+  const setAllAccounts = async (ids: number[]) => {
+    setAccountIDs(ids);
+    await api.put(`/campaigns/${cid}/accounts`, { account_ids: ids });
+  };
   const enrollAll = async () => { const r = await api.post<{ enrolled: number }>(`/campaigns/${cid}/enroll`, { all: true }); setMsg(`Enrolled ${r.enrolled} leads`); loadEnrolled(); };
   const enrollUnemailed = async () => { const r = await api.post<{ enrolled: number }>(`/campaigns/${cid}/enroll`, { unemailed: true }); setMsg(`Enrolled ${r.enrolled} previously-uncontacted leads`); loadLeads(); loadEnrolled(); };
   const removeAll = async () => {
@@ -95,6 +99,12 @@ export default function CampaignDetail() {
       <div className="card">
         <h3>Sending inboxes (round-robin, 1 per account)</h3>
         {accounts.length === 0 && <p className="muted">No email accounts connected yet.</p>}
+        {accounts.length > 0 && (
+          <div className="row" style={{ marginBottom: 10 }}>
+            <button className="secondary" onClick={() => setAllAccounts(accounts.map((a) => a.id))} disabled={accountIDs.length === accounts.length}>Select all ({accounts.length})</button>
+            <button className="secondary" onClick={() => setAllAccounts([])} disabled={accountIDs.length === 0}>Clear</button>
+          </div>
+        )}
         {accounts.map((a) => (
           <label key={a.id} style={{ display: "inline-flex", gap: 6, alignItems: "center", marginRight: 16 }}>
             <input type="checkbox" style={{ width: "auto" }} checked={accountIDs.includes(a.id)} onChange={() => toggleAccount(a.id)} /> {a.email}
