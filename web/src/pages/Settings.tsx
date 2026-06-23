@@ -3,10 +3,9 @@ import { api, Setting } from "../api";
 
 // Integration credential fields. Passwords are stored encrypted (is_secret).
 const FIELDS: { key: string; label: string; secret: boolean }[] = [
-  { key: "kalodata_email", label: "Kalodata email", secret: false },
-  { key: "kalodata_password", label: "Kalodata password", secret: true },
-  { key: "fastmoss_email", label: "Fastmoss email (fallback)", secret: false },
-  { key: "fastmoss_password", label: "Fastmoss password (fallback)", secret: true },
+  { key: "fastmoss_client_secret", label: "FastMoss API client_secret (primary)", secret: true },
+  { key: "kalodata_email", label: "Kalodata email (fallback scrape)", secret: false },
+  { key: "kalodata_password", label: "Kalodata password (fallback scrape)", secret: true },
 ];
 
 export default function Settings() {
@@ -35,8 +34,10 @@ export default function Settings() {
       <div className="card">
         <h3>TikTok Shop data providers</h3>
         <p className="muted">
-          Step 1 of email research checks whether a brand is on TikTok Shop via Kalodata, falling back
-          to Fastmoss. Passwords are encrypted at rest and never shown back.
+          Step 1 of email research pulls the brand's TikTok Shop metrics (GMV, # creators, # videos)
+          from the <b>FastMoss OpenAPI</b> (primary), falling back to scraping <b>Kalodata</b> with the
+          login below. Secrets are encrypted at rest and never shown back. Get your FastMoss
+          client_secret from its Console → API keys.
         </p>
         {FIELDS.map((f) => (
           <div key={f.key} style={{ marginBottom: 10 }}>

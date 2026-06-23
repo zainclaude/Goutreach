@@ -19,15 +19,17 @@ import (
 
 	"github.com/zainclaude/goutreach/internal/ai"
 	"github.com/zainclaude/goutreach/internal/crypto"
+	"github.com/zainclaude/goutreach/internal/fastmoss"
 	"github.com/zainclaude/goutreach/internal/store"
 )
 
 // Settings keys for the TikTok Shop data providers.
 const (
-	KeyKalodataEmail    = "kalodata_email"
-	KeyKalodataPassword = "kalodata_password" // secret
-	KeyFastmossEmail    = "fastmoss_email"
-	KeyFastmossPassword = "fastmoss_password" // secret
+	KeyFastmossClientSecret = "fastmoss_client_secret" // secret — FastMoss OpenAPI (primary)
+	KeyKalodataEmail        = "kalodata_email"
+	KeyKalodataPassword     = "kalodata_password" // secret
+	KeyFastmossEmail        = "fastmoss_email"
+	KeyFastmossPassword     = "fastmoss_password" // secret
 )
 
 // Checker implements ai.TikTokShopChecker using kalodata with a fastmoss fallback.
@@ -66,25 +68,45 @@ func (c *Checker) loadCreds(ctx context.Context, emailKey, passKey string) (cred
 	return creds{email: email, password: pass}, true
 }
 
-// Check returns the brand's TikTok Shop status and metrics, trying kalodata then
-// fastmoss. Falls through to "unknown" (so the decision tree proceeds to Amazon)
-// when neither provider is configured or both are unavailable.
+// loadSecret returns a single decrypted secret setting (e.g. an API token).
+func (c *Checker) loadSecret(ctx context.Context, key string) (string, bool) {
+	userID, ok := c.st.FirstUserID(ctx)
+	if !ok {
+		return "", false
+	}
+	enc, ok, _ := c.st.GetSetting(ctx, userID, key)
+	if !ok || enc == "" {
+		return "", false
+	}
+	v, err := c.cipher.Decrypt(enc)
+	if err != nil || v == "" {
+		return "", false
+	}
+	return v, true
+}
+
+// Check returns the brand's TikTok Shop status and metrics. It uses the FastMoss
+// OpenAPI as the primary source and falls back to scraping kalodata. Falls through
+// to "unknown" (so the decision tree proceeds to Amazon) when no provider is
+// configured or all are unavailable.
 func (c *Checker) Check(ctx context.Context, brand string) (ai.TikTokShopResult, error) {
+	if secret, ok := c.loadSecret(ctx, KeyFastmossClientSecret); ok {
+		res, err := queryFastmossAPI(ctx, secret, brand)
+		if err == nil && res.OnTikTokShop != "unknown" {
+			return res, nil
+		}
+		if err != nil {
+			c.log.Printf("research: fastmoss unavailable (%v); trying kalodata", err)
+		}
+	}
 	if kd, ok := c.loadCreds(ctx, KeyKalodataEmail, KeyKalodataPassword); ok {
 		res, err := queryKalodata(ctx, kd, brand)
 		if err == nil && res.OnTikTokShop != "unknown" {
 			return res, nil
 		}
 		if err != nil {
-			c.log.Printf("research: kalodata unavailable (%v); trying fastmoss", err)
+			c.log.Printf("research: kalodata unavailable (%v)", err)
 		}
-	}
-	if fm, ok := c.loadCreds(ctx, KeyFastmossEmail, KeyFastmossPassword); ok {
-		res, err := queryFastmoss(ctx, fm, brand)
-		if err == nil {
-			return res, nil
-		}
-		c.log.Printf("research: fastmoss unavailable (%v)", err)
 	}
 	return ai.TikTokShopResult{
 		OnTikTokShop: "unknown",
@@ -356,12 +378,26 @@ func parseKM(s string) int {
 	return int(f * mult)
 }
 
-// queryFastmoss is the fallback provider. Fastmoss is a login-gated dashboard like
-// kalodata; without its (separately priced) API this returns "unknown" so the
-// decision tree falls through.
-func queryFastmoss(ctx context.Context, _ creds, brand string) (ai.TikTokShopResult, error) {
-	return ai.TikTokShopResult{
+// queryFastmossAPI is the primary provider: the FastMoss OpenAPI. It resolves the
+// brand to a shop and returns GMV + creator/video counts.
+func queryFastmossAPI(ctx context.Context, secret, brand string) (ai.TikTokShopResult, error) {
+	unknown := ai.TikTokShopResult{
 		OnTikTokShop: "unknown",
-		Details:      fmt.Sprintf("fastmoss lookup for %q pending live integration", brand),
+		Details:      fmt.Sprintf("fastmoss: could not resolve %q", brand),
+	}
+	m, err := fastmoss.New(secret, "").BrandMetrics(ctx, brand)
+	if err != nil {
+		return unknown, err
+	}
+	if !m.Found {
+		return unknown, nil
+	}
+	rev, creators, videos := m.RevenueUSD, m.Creators, m.Videos
+	return ai.TikTokShopResult{
+		OnTikTokShop:      "yes",
+		Details:           fmt.Sprintf("fastmoss: %s — monthly GMV $%.0f, %d creators, %d videos", brand, rev, creators, videos),
+		MonthlyRevenueUSD: &rev,
+		ActiveAffiliates:  &creators,
+		Videos30d:         &videos,
 	}, nil
 }
