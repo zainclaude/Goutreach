@@ -6,6 +6,7 @@ const blank = {
   smtp_host: "", smtp_port: 587, smtp_username: "", smtp_password: "",
   imap_host: "", imap_port: 993, imap_username: "", imap_password: "",
   daily_limit: 30, warmup_enabled: false, warmup_target_per_day: 20,
+  skip_verify: false,
 };
 
 export default function Accounts() {
@@ -16,6 +17,7 @@ export default function Accounts() {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [importSkipVerify, setImportSkipVerify] = useState(false);
 
   const load = () => {
     api.get<Account[]>("/accounts").then((a) => setAccounts(a || []));
@@ -45,14 +47,18 @@ export default function Accounts() {
   const importAccounts = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    setMsg("Importing & verifying accounts…");
+    setMsg(importSkipVerify ? "Importing accounts (no verification)…" : "Importing & verifying accounts…");
     try {
-      const r = await uploadAccountsCSV(f);
-      let m = `✓ Added ${r.added}, failed ${r.failed}`;
-      if (r.errors?.length) m += ": " + r.errors.map((x: any) => `${x.email} (${x.error})`).join("; ");
+      const r = await uploadAccountsCSV(f, importSkipVerify);
+      let m = `✓ Added ${r.added}`;
+      if (r.unverified) m += `, ${r.unverified} saved unverified`;
+      if (r.failed) m += `, ${r.failed} failed`;
+      const notes = [...(r.warnings || []), ...(r.errors || [])];
+      if (notes.length) m += ": " + notes.map((x: any) => `${x.email} (${x.error})`).join("; ");
       setMsg(m);
       load();
     } catch (e: any) { setMsg("✗ " + e.message); }
+    finally { e.target.value = ""; }
   };
 
   const set = (k: string, v: any) => setForm({ ...form, [k]: v });
@@ -153,6 +159,13 @@ export default function Accounts() {
           <br />
           <b>Vendor exports work as-is</b> (e.g. Maildoso): separate <code>IMAP/SMTP Username + Password</code>, <code>IMAP/SMTP Host + Port</code>, <code>First/Last Name</code>, and <code>Warmup Enabled/Limit</code> columns are all recognized.
         </p>
+        <label style={{ display: "inline-flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={importSkipVerify} onChange={(e) => setImportSkipVerify(e.target.checked)} />
+          Skip verification (save without dialing SMTP/IMAP)
+        </label>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Use this if import fails with <code>context deadline exceeded</code> or TLS errors — that means the server can't reach the mailbox host right now. Accounts are saved as <b>unverified</b>; the sender/warmup workers will surface real connection errors later.
+        </p>
         <input type="file" accept=".csv" onChange={importAccounts} style={{ width: "auto" }} />
       </div>
 
@@ -219,6 +232,10 @@ export default function Accounts() {
         </div>
         <label style={{ display: "inline-flex", gap: 8, alignItems: "center", marginTop: 10 }}>
           <input type="checkbox" style={{ width: "auto" }} checked={form.warmup_enabled} onChange={(e) => set("warmup_enabled", e.target.checked)} /> Enable warmup
+        </label>
+        <br />
+        <label style={{ display: "inline-flex", gap: 8, alignItems: "center", marginTop: 8 }}>
+          <input type="checkbox" style={{ width: "auto" }} checked={form.skip_verify} onChange={(e) => set("skip_verify", e.target.checked)} /> Skip verification (save without dialing SMTP/IMAP)
         </label>
         {msg && <p className={msg.startsWith("✓") ? "ok" : "err"}>{msg}</p>}
         <div className="row" style={{ marginTop: 12 }}>

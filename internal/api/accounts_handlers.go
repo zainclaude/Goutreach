@@ -29,6 +29,7 @@ type accountReq struct {
 	DailyLimit         int    `json:"daily_limit"`
 	WarmupEnabled      bool   `json:"warmup_enabled"`
 	WarmupTargetPerDay int    `json:"warmup_target_per_day"`
+	SkipVerify         bool   `json:"skip_verify"` // save without dialing SMTP/IMAP
 }
 
 // providerPreset holds the SMTP/IMAP servers for a known provider.
@@ -120,9 +121,11 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "email is required (and host/port for custom providers)")
 		return
 	}
-	if err := verifyCreds(req); err != nil {
-		writeErr(w, http.StatusBadRequest, "verification failed: "+err.Error())
-		return
+	if !req.SkipVerify {
+		if err := verifyCreds(req); err != nil {
+			writeErr(w, http.StatusBadRequest, "verification failed: "+err.Error())
+			return
+		}
 	}
 	smtpEnc, err := s.cipher.Encrypt(req.SMTPPassword)
 	if err != nil {
@@ -153,6 +156,10 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if req.SkipVerify {
+		_ = s.st.SetAccountStatus(r.Context(), acc.ID, "unverified", "added without verification")
+		acc.Status, acc.LastError = "unverified", "added without verification"
 	}
 	writeJSON(w, http.StatusOK, acc)
 }
@@ -218,17 +225,24 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 
 	idx := headerIndex(rows[0])
 
+	// When skip_verify is set we don't dial SMTP/IMAP first. This lets accounts
+	// import even when the mail host is briefly unreachable from the server
+	// (the verification dial would otherwise time out and drop the row).
+	skipVerify := isTrue(r.FormValue("skip_verify"))
+
 	type rowErr struct {
 		Email string `json:"email"`
 		Error string `json:"error"`
 	}
 	var (
-		mu     sync.Mutex
-		added  int
-		errs   []rowErr
-		wg     sync.WaitGroup
-		sem    = make(chan struct{}, 6) // bound concurrent verifications
-		userID = s.userID(r)
+		mu         sync.Mutex
+		added      int
+		unverified int
+		errs       []rowErr
+		warnings   []rowErr
+		wg         sync.WaitGroup
+		sem        = make(chan struct{}, 6) // bound concurrent verifications
+		userID     = s.userID(r)
 	)
 
 	for _, row := range rows[1:] {
@@ -244,26 +258,41 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if err := verifyCreds(req); err != nil {
-				mu.Lock()
-				errs = append(errs, rowErr{req.Email, err.Error()})
-				mu.Unlock()
-				return
+			// Verify if asked, but a failure no longer drops the row — we save
+			// it as "unverified" so the user gets their account and can retry.
+			verifyErr := ""
+			if !skipVerify {
+				if err := verifyCreds(req); err != nil {
+					verifyErr = err.Error()
+				}
 			}
+
 			smtpEnc, _ := s.cipher.Encrypt(req.SMTPPassword)
 			imapEnc, _ := s.cipher.Encrypt(req.IMAPPassword)
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_, err := s.st.CreateAccount(ctx, store.EmailAccount{
+			acc, err := s.st.CreateAccount(ctx, store.EmailAccount{
 				UserID: userID, Email: trimLower(req.Email), FromName: req.FromName,
 				SMTPHost: req.SMTPHost, SMTPPort: req.SMTPPort, SMTPUsername: req.SMTPUsername, SMTPPasswordEnc: smtpEnc,
 				IMAPHost: req.IMAPHost, IMAPPort: req.IMAPPort, IMAPUsername: req.IMAPUsername, IMAPPasswordEnc: imapEnc,
 				DailyLimit: req.DailyLimit, WarmupEnabled: req.WarmupEnabled, WarmupTargetPerDay: req.WarmupTargetPerDay,
 				Source: "csv",
 			})
-			mu.Lock()
 			if err != nil {
+				mu.Lock()
 				errs = append(errs, rowErr{req.Email, err.Error()})
+				mu.Unlock()
+				return
+			}
+			// Flag unverified accounts so they're visible in the list; CreateAccount
+			// defaults new rows to "active".
+			if verifyErr != "" {
+				_ = s.st.SetAccountStatus(context.Background(), acc.ID, "unverified", "verify: "+verifyErr)
+			}
+			mu.Lock()
+			if verifyErr != "" {
+				unverified++
+				warnings = append(warnings, rowErr{req.Email, verifyErr})
 			} else {
 				added++
 			}
@@ -272,7 +301,19 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 	wg.Wait()
 
-	writeJSON(w, http.StatusOK, map[string]any{"added": added, "failed": len(errs), "errors": errs})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"added": added, "unverified": unverified, "failed": len(errs),
+		"errors": errs, "warnings": warnings,
+	})
+}
+
+// isTrue parses common truthy form values.
+func isTrue(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // headerIndex maps normalized CSV header names ("IMAP Host" -> "imap_host") to

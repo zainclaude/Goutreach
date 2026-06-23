@@ -47,13 +47,14 @@ export async function uploadCSV(file: File) {
   return uploadTo("/api/leads/import", file);
 }
 
-export async function uploadAccountsCSV(file: File) {
-  return uploadTo("/api/accounts/import", file);
+export async function uploadAccountsCSV(file: File, skipVerify = false) {
+  return uploadTo("/api/accounts/import", file, skipVerify ? { skip_verify: "1" } : undefined);
 }
 
-async function uploadTo(path: string, file: File) {
+async function uploadTo(path: string, file: File, fields?: Record<string, string>) {
   const fd = new FormData();
   fd.append("file", file);
+  if (fields) for (const [k, v] of Object.entries(fields)) fd.append(k, v);
   const res = await fetch(path, {
     method: "POST",
     headers: { Authorization: `Bearer ${getToken()}` },
