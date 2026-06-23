@@ -120,7 +120,12 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 	g.log.Printf("ai[%s] start (brand_from_domain=%v)", brand, brandIsDomain)
 
 	tools := []anthropic.ToolUnionParam{
-		{OfWebSearchTool20260209: &anthropic.WebSearchTool20260209Param{}},
+		// Use the 2025-03-05 web_search: it returns plain web_search_tool_result
+		// blocks that round-trip through ToParam correctly. The 2026-02-09 variant
+		// runs server-side in a code-execution container and returns
+		// code_execution_tool_result blocks whose error variant the SDK fails to
+		// re-serialize, 400-ing every multi-turn continuation.
+		{OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{}},
 		{OfTool: &anthropic.ToolParam{
 			Name:        "check_tiktok_shop",
 			Description: anthropic.String("Check whether a brand sells on TikTok Shop using the kalodata.com data source. Returns on_tiktok_shop = yes | no | unknown, and — when available — the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d. Use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, do not guess."),
