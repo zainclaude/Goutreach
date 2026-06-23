@@ -61,7 +61,17 @@ export default function CampaignDetail() {
     catch (e: any) { setMsg(e.message); }
   };
   const launch = async () => {
-    if (!confirm("Launch campaign? Approved previews + remaining leads will start sending.")) return;
+    const previewed = new Set(
+      messages.filter((m) => m.status === "generated" || m.status === "sent").map((m) => m.lead_email)
+    );
+    const unseen = enrolled.filter((e) => !previewed.has(e.email)).length;
+    let prompt = "Launch campaign? Approved previews + remaining leads will start sending.";
+    if (unseen > 0) {
+      prompt = `⚠️ ${unseen} of ${enrolled.length} enrolled leads have NOT been previewed.\n\n` +
+        `Their emails will be generated and sent automatically WITHOUT your review. ` +
+        `Generate previews for them first if you want to see every email.\n\nLaunch anyway?`;
+    }
+    if (!confirm(prompt)) return;
     await api.post(`/campaigns/${cid}/launch`); setMsg("Launched 🚀"); loadCampaign();
   };
   const setStatus = async (status: string) => { await api.patch(`/campaigns/${cid}`, { status }); loadCampaign(); };
@@ -122,6 +132,13 @@ export default function CampaignDetail() {
           <button className="secondary" onClick={preview}>Generate {campaign.approval_count} previews</button>
           <button onClick={launch}>Approve & launch</button>
         </div>
+        {enrolled.length > 0 && (() => {
+          const previewed = new Set(messages.filter((m) => m.status === "generated" || m.status === "sent").map((m) => m.lead_email));
+          const unseen = enrolled.filter((e) => !previewed.has(e.email)).length;
+          return unseen > 0
+            ? <p className="err" style={{ marginTop: 8 }}>⚠️ {unseen} of {enrolled.length} enrolled leads have no preview — they'll send without review on launch.</p>
+            : <p className="ok" style={{ marginTop: 8 }}>✓ All {enrolled.length} enrolled leads have a preview.</p>;
+        })()}
         {showPicker && (() => {
           const enrolledIds = new Set(enrolled.map((e) => e.lead_id));
           return (
