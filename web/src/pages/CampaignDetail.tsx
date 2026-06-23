@@ -205,7 +205,7 @@ function MessageRow({ m, onApprove, onReject, onSave }:
           {cached && <span className="tag" title="Reused from brand cache — no AI tokens used" style={{ marginLeft: 4 }}>♻ cached</span>}
         </td>
         <td>{m.subject || <span className="muted">{m.status === "generating" || m.status === "queued" ? "generating…" : "—"}</span>}</td>
-        <td><span className={`badge ${m.status}`}>{m.status}</span></td>
+        <td><span className={`badge ${m.status}`} title={m.error || undefined}>{m.status}</span></td>
         <td>{m.approved ? "✓" : "—"}</td>
         <td>
           <button className="secondary" onClick={() => setOpen(!open)}>{open ? "Hide" : "View"}</button>
@@ -214,6 +214,7 @@ function MessageRow({ m, onApprove, onReject, onSave }:
       {open && (
         <tr>
           <td colSpan={6}>
+            {m.status === "failed" && m.error && <p className="err">⚠️ {m.error}</p>}
             {m.research_notes && <p className="muted">🔎 {m.research_notes}</p>}
             <label>Subject</label>
             <input value={subject} onChange={(e) => setSubject(e.target.value)} />

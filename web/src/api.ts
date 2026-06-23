@@ -98,7 +98,7 @@ export interface CampaignLeadDetail {
 export interface Step { step_index: number; delay_days: number; angle: string; }
 export interface Message {
   id: number; step_index: number; subject: string; body: string;
-  status: string; template_used: string; research_notes: string;
+  status: string; template_used: string; research_notes: string; error: string;
   approved: boolean; lead_email: string; lead_company: string;
 }
 export interface Stats {
