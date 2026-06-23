@@ -121,7 +121,6 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 
 	tools := []anthropic.ToolUnionParam{
 		{OfWebSearchTool20260209: &anthropic.WebSearchTool20260209Param{}},
-		{OfWebFetchTool20260209: &anthropic.WebFetchTool20260209Param{}},
 		{OfTool: &anthropic.ToolParam{
 			Name:        "check_tiktok_shop",
 			Description: anthropic.String("Check whether a brand sells on TikTok Shop using the kalodata.com data source. Returns on_tiktok_shop = yes | no | unknown, and — when available — the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d. Use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, do not guess."),
@@ -242,7 +241,7 @@ func (g *Generator) systemPrompt(in Input, brand string, brandIsDomain bool) str
 	if brandIsDomain {
 		fmt.Fprintf(&b, "BRAND NAME RESOLUTION (do this FIRST):\n"+
 			"We only have the website domain %q, not a clean company name. Before any other research, "+
-			"use web_search/web_fetch to determine the company's real, properly-capitalized brand name "+
+			"use web_search to determine the company's real, properly-capitalized brand name "+
 			"(e.g. \"naturalfactors.com\" is the brand \"Natural Factors\"). Use that real name for every "+
 			"tool call (including check_tiktok_shop) and everywhere in the subject and body. NEVER write a "+
 			"bare domain or URL as if it were the brand name, and replace any remaining {{brand_name}} "+
@@ -260,16 +259,18 @@ func (g *Generator) systemPrompt(in Input, brand string, brandIsDomain bool) str
 
 	b.WriteString(`DECISION TREE — follow IN ORDER to select exactly one template:
 Step 1. Determine whether the brand sells on TikTok Shop. Call check_tiktok_shop
-        first; if it returns "unknown", fall back to web_search/web_fetch (search
-        "<brand> TikTok Shop", check tiktok.com and public kalodata.com pages).
+        first; if it returns "unknown", fall back to web_search (search
+        "<brand> TikTok Shop", tiktok.com and public kalodata.com mentions).
         If there is credible evidence the brand sells on TikTok Shop -> TEMPLATE A.
         Otherwise continue.
-Step 2. Use web_search/web_fetch to check amazon.com for the brand's products.
+Step 2. Use web_search to check whether the brand sells on amazon.com.
         If the brand sells on Amazon -> use TEMPLATE B. Otherwise continue.
-Step 3. Check the Meta Ad Library for ACTIVE ads in the United States by fetching
-        https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=US&media_type=all&search_type=keyword_unordered&q=<brand>
-        (URL-encode the brand name). Count the active ads — this is C#0.
-        If there is at least 1 active US ad -> use TEMPLATE C. Otherwise continue.
+Step 3. Use web_search to assess whether the brand runs ACTIVE ads in the US
+        (search "<brand> Meta ad library", "<brand> facebook ads"). If you can
+        verify a specific count of active US ads, that is C#0; if you cannot
+        verify a number, omit the C#0 marker (never guess a count).
+        If there is credible evidence of at least 1 active US ad -> use TEMPLATE C.
+        Otherwise continue.
 Step 4. Use web_search to assess whether the brand has a big retail presence
         (sold in major retailers like Target, Walmart, Sephora, Ulta, etc.).
         If yes -> use TEMPLATE D. If no -> use the generic TEMPLATE E.
