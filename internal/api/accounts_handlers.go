@@ -207,26 +207,7 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	idx := map[string]int{}
-	for i, h := range rows[0] {
-		idx[strings.ToLower(strings.ReplaceAll(strings.TrimSpace(h), " ", "_"))] = i
-	}
-	col := func(row []string, name string) string {
-		if i, ok := idx[name]; ok && i < len(row) {
-			return strings.TrimSpace(row[i])
-		}
-		return ""
-	}
-	// colAny returns the first non-empty value among header aliases (so exports
-	// from different vendors with slightly different column names just work).
-	colAny := func(row []string, names ...string) string {
-		for _, n := range names {
-			if v := col(row, n); v != "" {
-				return v
-			}
-		}
-		return ""
-	}
+	idx := headerIndex(rows[0])
 
 	type rowErr struct {
 		Email string `json:"email"`
@@ -242,34 +223,9 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 	)
 
 	for _, row := range rows[1:] {
-		email := col(row, "email")
-		if email == "" {
+		req := parseAccountRow(idx, row)
+		if req.Email == "" {
 			continue
-		}
-		fromName := col(row, "from_name")
-		if fromName == "" {
-			fromName = strings.TrimSpace(col(row, "first_name") + " " + col(row, "last_name"))
-		}
-		req := accountReq{
-			Provider:           col(row, "provider"),
-			Email:              email,
-			FromName:           fromName,
-			Password:           col(row, "password"),
-			SMTPHost:           col(row, "smtp_host"),
-			SMTPPort:           atoiOr(col(row, "smtp_port"), 0),
-			SMTPUsername:       col(row, "smtp_username"),
-			SMTPPassword:       col(row, "smtp_password"),
-			IMAPHost:           col(row, "imap_host"),
-			IMAPPort:           atoiOr(col(row, "imap_port"), 0),
-			IMAPUsername:       col(row, "imap_username"),
-			IMAPPassword:       col(row, "imap_password"),
-			DailyLimit:         atoiOr(col(row, "daily_limit"), 0),
-			WarmupEnabled:      parseBool(colAny(row, "warmup_enabled", "warmup")),
-			WarmupTargetPerDay: atoiOr(colAny(row, "warmup_target", "warmup_limit"), 0),
-		}
-		// Default to Gmail when no provider and no explicit SMTP host are given.
-		if req.Provider == "" && req.SMTPHost == "" {
-			req.Provider = "gmail"
 		}
 		req.applyDefaults()
 
@@ -308,6 +264,62 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 
 	writeJSON(w, http.StatusOK, map[string]any{"added": added, "failed": len(errs), "errors": errs})
+}
+
+// headerIndex maps normalized CSV header names ("IMAP Host" -> "imap_host") to
+// their column index.
+func headerIndex(header []string) map[string]int {
+	idx := map[string]int{}
+	for i, h := range header {
+		idx[strings.ToLower(strings.ReplaceAll(strings.TrimSpace(h), " ", "_"))] = i
+	}
+	return idx
+}
+
+// parseAccountRow maps one CSV row to an accountReq. It understands vendor exports
+// (e.g. Maildoso/Primeforge) with separate IMAP/SMTP username+password, First/Last
+// Name, and Warmup Enabled/Limit columns, as well as the simple shared-password
+// format. Provider defaults to gmail when no provider and no SMTP host are given.
+func parseAccountRow(idx map[string]int, row []string) accountReq {
+	col := func(name string) string {
+		if i, ok := idx[name]; ok && i < len(row) {
+			return strings.TrimSpace(row[i])
+		}
+		return ""
+	}
+	colAny := func(names ...string) string {
+		for _, n := range names {
+			if v := col(n); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	fromName := col("from_name")
+	if fromName == "" {
+		fromName = strings.TrimSpace(col("first_name") + " " + col("last_name"))
+	}
+	req := accountReq{
+		Provider:           col("provider"),
+		Email:              col("email"),
+		FromName:           fromName,
+		Password:           col("password"),
+		SMTPHost:           col("smtp_host"),
+		SMTPPort:           atoiOr(col("smtp_port"), 0),
+		SMTPUsername:       col("smtp_username"),
+		SMTPPassword:       col("smtp_password"),
+		IMAPHost:           col("imap_host"),
+		IMAPPort:           atoiOr(col("imap_port"), 0),
+		IMAPUsername:       col("imap_username"),
+		IMAPPassword:       col("imap_password"),
+		DailyLimit:         atoiOr(col("daily_limit"), 0),
+		WarmupEnabled:      parseBool(colAny("warmup_enabled", "warmup")),
+		WarmupTargetPerDay: atoiOr(colAny("warmup_target", "warmup_limit"), 0),
+	}
+	if req.Provider == "" && req.SMTPHost == "" {
+		req.Provider = "gmail"
+	}
+	return req
 }
 
 func atoiOr(s string, def int) int {
