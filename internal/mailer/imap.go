@@ -47,9 +47,43 @@ type InboundMessage struct {
 	Subject    string
 }
 
+// isTransientNet reports whether a network error is worth retrying — notably the
+// intermittent non-TLS responses some mail edges (e.g. Maildoso) return.
+func isTransientNet(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	for _, k := range []string{
+		"does not look like a TLS handshake",
+		"handshake failure",
+		"broken pipe",
+		"connection reset",
+		"unexpected EOF",
+		"i/o timeout",
+		"connection refused",
+		"EOF",
+	} {
+		if strings.Contains(s, k) {
+			return true
+		}
+	}
+	return false
+}
+
 func dialIMAP(creds IMAPCreds) (*imapclient.Client, error) {
 	addr := fmt.Sprintf("%s:%d", creds.Host, creds.Port)
-	c, err := imapclient.DialTLS(addr, nil)
+	var c *imapclient.Client
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 300 * time.Millisecond)
+		}
+		c, err = imapclient.DialTLS(addr, nil)
+		if err == nil || !isTransientNet(err) {
+			break
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("imap dial: %w", err)
 	}

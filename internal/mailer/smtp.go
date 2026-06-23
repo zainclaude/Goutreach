@@ -53,15 +53,31 @@ func newClient(c SMTPCreds) (*mail.Client, error) {
 }
 
 // VerifySMTP dials and authenticates without sending, to validate credentials.
+// The dial is retried on transient network errors (some mail edges intermittently
+// answer without a valid TLS handshake); auth failures are not retried.
 func VerifySMTP(ctx context.Context, c SMTPCreds) error {
-	client, err := newClient(c)
-	if err != nil {
-		return fmt.Errorf("smtp client: %w", err)
+	var dialErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 300 * time.Millisecond):
+			}
+		}
+		client, err := newClient(c)
+		if err != nil {
+			return fmt.Errorf("smtp client: %w", err)
+		}
+		dialErr = client.DialWithContext(ctx)
+		if dialErr == nil {
+			return client.Close()
+		}
+		if !isTransientNet(dialErr) {
+			break
+		}
 	}
-	if err := client.DialWithContext(ctx); err != nil {
-		return fmt.Errorf("smtp dial/auth: %w", err)
-	}
-	return client.Close()
+	return fmt.Errorf("smtp dial/auth: %w", dialErr)
 }
 
 // Send delivers an email and returns the Message-ID value (without angle brackets) used.
