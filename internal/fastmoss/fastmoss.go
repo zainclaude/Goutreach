@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -31,6 +32,15 @@ type Client struct {
 	secret  string
 	baseURL string
 	http    *http.Client
+	// Log, if set, receives per-call diagnostics (which shop matched, the totals
+	// returned, and any errors) so shop-field issues are visible in server logs.
+	Log *log.Logger
+}
+
+func (c *Client) logf(format string, args ...any) {
+	if c.Log != nil {
+		c.Log.Printf(format, args...)
+	}
 }
 
 // New builds a client. baseURL may be empty to use DefaultBaseURL.
@@ -120,6 +130,7 @@ func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error
 	}, &search); err != nil {
 		return Metrics{}, err
 	}
+	c.logf("fastmoss: search %q returned %d shops; keys of top hit: %v", brand, len(search.List), keysOf(search.List))
 	shop := pickShop(brand, search.List)
 	if shop == nil {
 		return Metrics{}, nil // not found on TikTok Shop
@@ -134,13 +145,15 @@ func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error
 		ShopName:   firstStr(shop, "shop_name", "name", "title"),
 		RevenueUSD: firstNum(shop, "usd_gmv", "shop_usd_gmv", "gmv", "revenue", "total_gmv"),
 	}
+	c.logf("fastmoss: matched shop=%s name=%q gmv=%.0f", shopID, m.ShopName, m.RevenueUSD)
 	m.Creators = c.shopTotal(ctx, pathShopCreator, shopID, month)
 	m.Videos = c.shopTotal(ctx, pathShopVideo, shopID, month)
 	return m, nil
 }
 
 // shopTotal returns data.total for a shop-scoped list endpoint (creators/videos)
-// over the given month. Returns 0 on error (metric simply omitted upstream).
+// over the given month. Returns 0 on error (metric simply omitted upstream); the
+// call + result + any error is logged so a wrong shop field is diagnosable.
 func (c *Client) shopTotal(ctx context.Context, path, shopID, month string) int {
 	var out struct {
 		Total int `json:"total"`
@@ -152,10 +165,22 @@ func (c *Client) shopTotal(ctx context.Context, path, shopID, month string) int 
 		},
 		"page": 1, "pagesize": 1,
 	}
-	if err := c.post(ctx, path, body, &out); err != nil {
-		return 0
-	}
+	err := c.post(ctx, path, body, &out)
+	c.logf("fastmoss: %s shop=%s month=%s -> total=%d err=%v", path, shopID, month, out.Total, err)
 	return out.Total
+}
+
+// keysOf lists the field names of the first result, to reveal the actual shop
+// schema (so we can confirm the id/gmv field names).
+func keysOf(list []map[string]any) []string {
+	if len(list) == 0 {
+		return nil
+	}
+	var ks []string
+	for k := range list[0] {
+		ks = append(ks, k)
+	}
+	return ks
 }
 
 // pickShop chooses the best brand-name match from search results, preferring an

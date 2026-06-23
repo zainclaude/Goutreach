@@ -91,7 +91,7 @@ func (c *Checker) loadSecret(ctx context.Context, key string) (string, bool) {
 // configured or all are unavailable.
 func (c *Checker) Check(ctx context.Context, brand string) (ai.TikTokShopResult, error) {
 	if secret, ok := c.loadSecret(ctx, KeyFastmossClientSecret); ok {
-		res, err := queryFastmossAPI(ctx, secret, brand)
+		res, err := queryFastmossAPI(ctx, c.log, secret, brand)
 		if err == nil && res.OnTikTokShop != "unknown" {
 			return res, nil
 		}
@@ -380,12 +380,14 @@ func parseKM(s string) int {
 
 // queryFastmossAPI is the primary provider: the FastMoss OpenAPI. It resolves the
 // brand to a shop and returns GMV + creator/video counts.
-func queryFastmossAPI(ctx context.Context, secret, brand string) (ai.TikTokShopResult, error) {
+func queryFastmossAPI(ctx context.Context, logger *log.Logger, secret, brand string) (ai.TikTokShopResult, error) {
 	unknown := ai.TikTokShopResult{
 		OnTikTokShop: "unknown",
 		Details:      fmt.Sprintf("fastmoss: could not resolve %q", brand),
 	}
-	m, err := fastmoss.New(secret, "").BrandMetrics(ctx, brand)
+	fc := fastmoss.New(secret, "")
+	fc.Log = logger
+	m, err := fc.BrandMetrics(ctx, brand)
 	if err != nil {
 		return unknown, err
 	}
