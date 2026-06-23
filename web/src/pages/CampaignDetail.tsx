@@ -50,6 +50,11 @@ export default function CampaignDetail() {
     const r = await api.del<{ removed: number }>(`/campaigns/${cid}/enroll`);
     setMsg(`Removed ${r.removed} leads`); loadMessages(); loadEnrolled();
   };
+  const removeLead = async (leadID: number, email: string) => {
+    if (!confirm(`Remove ${email} from this campaign? Their generated draft is cleared too.`)) return;
+    await api.del(`/campaigns/${cid}/leads/${leadID}`);
+    setMsg(`Removed ${email}`); loadEnrolled(); loadMessages();
+  };
   const toggleSelected = (lid: number) => setSelected((s) => s.includes(lid) ? s.filter((x) => x !== lid) : [...s, lid]);
   const enrollSelected = async () => {
     if (selected.length === 0) { setMsg("No leads selected"); return; }
@@ -172,7 +177,7 @@ export default function CampaignDetail() {
         {enrolled.length === 0 && <p className="muted">No leads enrolled yet.</p>}
         {enrolled.length > 0 && (
           <table>
-            <thead><tr><th>Lead</th><th>Company</th><th>Status</th><th>Step</th></tr></thead>
+            <thead><tr><th>Lead</th><th>Company</th><th>Status</th><th>Step</th><th></th></tr></thead>
             <tbody>
               {enrolled.map((e) => (
                 <tr key={e.lead_id}>
@@ -180,6 +185,7 @@ export default function CampaignDetail() {
                   <td>{e.company || <span className="muted">—</span>}</td>
                   <td><span className={`badge ${e.status}`}>{e.status}</span></td>
                   <td>{e.current_step + 1}</td>
+                  <td><button className="danger" title="Remove this lead from the campaign" onClick={() => removeLead(e.lead_id, e.email)}>×</button></td>
                 </tr>
               ))}
             </tbody>

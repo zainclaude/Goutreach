@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/zainclaude/goutreach/internal/store"
 )
 
@@ -227,6 +229,22 @@ func (s *Server) handleCampaignLeads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, leads)
+}
+
+// handleUnenrollLead removes one lead from a campaign (and its draft message).
+func (s *Server) handleUnenrollLead(w http.ResponseWriter, r *http.Request) {
+	id := idParam(r)
+	if _, err := s.st.GetCampaign(r.Context(), s.userID(r), id); err != nil {
+		writeErr(w, http.StatusNotFound, "not found")
+		return
+	}
+	leadID := parseInt64(chi.URLParam(r, "leadID"))
+	removed, err := s.st.UnenrollLead(r.Context(), id, leadID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
 // handleUnenrollAll removes every lead from a campaign (and their draft messages).
