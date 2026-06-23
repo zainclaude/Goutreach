@@ -121,6 +121,8 @@ export default function Accounts() {
           Upload a CSV to connect many mailboxes at once. Each row is verified before saving.
           Columns: <code>email, password, provider, from_name, smtp_host, smtp_port, imap_host, imap_port, daily_limit, warmup, warmup_target</code>.
           For Google/Outlook, just set <code>provider</code> + <code>email</code> + <code>password</code> (app password) — servers auto-fill.
+          <br />
+          <b>Vendor exports work as-is</b> (e.g. Maildoso): separate <code>IMAP/SMTP Username + Password</code>, <code>IMAP/SMTP Host + Port</code>, <code>First/Last Name</code>, and <code>Warmup Enabled/Limit</code> columns are all recognized.
         </p>
         <input type="file" accept=".csv" onChange={importAccounts} style={{ width: "auto" }} />
       </div>

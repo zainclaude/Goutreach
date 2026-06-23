@@ -217,6 +217,16 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 		}
 		return ""
 	}
+	// colAny returns the first non-empty value among header aliases (so exports
+	// from different vendors with slightly different column names just work).
+	colAny := func(row []string, names ...string) string {
+		for _, n := range names {
+			if v := col(row, n); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
 
 	type rowErr struct {
 		Email string `json:"email"`
@@ -236,18 +246,26 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 		if email == "" {
 			continue
 		}
+		fromName := col(row, "from_name")
+		if fromName == "" {
+			fromName = strings.TrimSpace(col(row, "first_name") + " " + col(row, "last_name"))
+		}
 		req := accountReq{
 			Provider:           col(row, "provider"),
 			Email:              email,
-			FromName:           col(row, "from_name"),
+			FromName:           fromName,
 			Password:           col(row, "password"),
 			SMTPHost:           col(row, "smtp_host"),
 			SMTPPort:           atoiOr(col(row, "smtp_port"), 0),
+			SMTPUsername:       col(row, "smtp_username"),
+			SMTPPassword:       col(row, "smtp_password"),
 			IMAPHost:           col(row, "imap_host"),
 			IMAPPort:           atoiOr(col(row, "imap_port"), 0),
+			IMAPUsername:       col(row, "imap_username"),
+			IMAPPassword:       col(row, "imap_password"),
 			DailyLimit:         atoiOr(col(row, "daily_limit"), 0),
-			WarmupEnabled:      parseBool(col(row, "warmup")),
-			WarmupTargetPerDay: atoiOr(col(row, "warmup_target"), 0),
+			WarmupEnabled:      parseBool(colAny(row, "warmup_enabled", "warmup")),
+			WarmupTargetPerDay: atoiOr(colAny(row, "warmup_target", "warmup_limit"), 0),
 		}
 		// Default to Gmail when no provider and no explicit SMTP host are given.
 		if req.Provider == "" && req.SMTPHost == "" {
@@ -276,6 +294,7 @@ func (s *Server) handleImportAccounts(w http.ResponseWriter, r *http.Request) {
 				SMTPHost: req.SMTPHost, SMTPPort: req.SMTPPort, SMTPUsername: req.SMTPUsername, SMTPPasswordEnc: smtpEnc,
 				IMAPHost: req.IMAPHost, IMAPPort: req.IMAPPort, IMAPUsername: req.IMAPUsername, IMAPPasswordEnc: imapEnc,
 				DailyLimit: req.DailyLimit, WarmupEnabled: req.WarmupEnabled, WarmupTargetPerDay: req.WarmupTargetPerDay,
+				Source: "csv",
 			})
 			mu.Lock()
 			if err != nil {
