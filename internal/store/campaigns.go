@@ -117,6 +117,31 @@ func (s *Store) SetCampaignStatus(ctx context.Context, userID, id int64, status 
 	return err
 }
 
+// MaybeCompleteCampaign marks a running campaign "completed" once every enrolled
+// lead has finished (no leads still in the 'active' state). Campaigns with no
+// leads at all are left running. Returns true if it transitioned to completed.
+func (s *Store) MaybeCompleteCampaign(ctx context.Context, campaignID int64) (bool, error) {
+	ct, err := s.pool.Exec(ctx, `
+		UPDATE campaigns SET status='completed'
+		WHERE id=$1 AND status='running'
+		  AND EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id=$1)
+		  AND NOT EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id=$1 AND status='active')`,
+		campaignID)
+	if err != nil {
+		return false, err
+	}
+	return ct.RowsAffected() > 0, nil
+}
+
+// ReactivateIfCompleted flips a completed campaign back to running, e.g. after
+// new leads are enrolled. No-op for any other status.
+func (s *Store) ReactivateIfCompleted(ctx context.Context, userID, id int64) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE campaigns SET status='running' WHERE id=$1 AND user_id=$2 AND status='completed'`,
+		id, userID)
+	return err
+}
+
 // ReplaceSteps deletes and re-inserts the steps for a campaign.
 func (s *Store) ReplaceSteps(ctx context.Context, campaignID int64, steps []CampaignStep) error {
 	tx, err := s.pool.Begin(ctx)

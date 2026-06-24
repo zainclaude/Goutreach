@@ -213,6 +213,10 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// New leads in a finished campaign resume sending: completed -> running.
+	if added > 0 {
+		_ = s.st.ReactivateIfCompleted(r.Context(), s.userID(r), id)
+	}
 	writeJSON(w, http.StatusOK, map[string]int{"enrolled": added})
 }
 

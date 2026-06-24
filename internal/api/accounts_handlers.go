@@ -198,6 +198,9 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 	if req.DailyLimit < 0 {
 		req.DailyLimit = 0
 	}
+	if req.WarmupTargetPerDay <= 0 {
+		req.WarmupTargetPerDay = 20 // 0 would pin the warmup ramp at its 2/day floor
+	}
 	if err := s.st.UpdateAccountSettings(r.Context(), s.userID(r), idParam(r),
 		req.FromName, req.DailyLimit, req.WarmupEnabled, req.WarmupTargetPerDay); err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())

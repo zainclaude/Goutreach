@@ -105,10 +105,16 @@ func (s *Service) warmAccount(ctx context.Context, acc store.EmailAccount, all [
 // rampTarget grows the daily warmup volume with mailbox age, capped at the
 // account's configured target.
 func rampTarget(acc store.EmailAccount, now time.Time) int {
+	// An unset/zero per-account cap means "use the default" — otherwise the cap
+	// below would pin the ramp at the floor (2/day) forever and it'd never grow.
+	maxPerDay := acc.WarmupTargetPerDay
+	if maxPerDay <= 0 {
+		maxPerDay = 20
+	}
 	days := int(now.Sub(acc.CreatedAt).Hours() / 24)
 	target := 2 + days*3
-	if target > acc.WarmupTargetPerDay {
-		target = acc.WarmupTargetPerDay
+	if target > maxPerDay {
+		target = maxPerDay
 	}
 	if target < 2 {
 		target = 2

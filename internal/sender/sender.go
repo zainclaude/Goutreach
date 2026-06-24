@@ -51,12 +51,22 @@ func (s *Service) tick(ctx context.Context) {
 		s.log.Printf("sender: due query: %v", err)
 		return
 	}
+	seen := map[int64]bool{}
 	for _, cl := range due {
 		if err := s.processLead(ctx, cl); err != nil {
 			s.log.Printf("sender: lead %d: %v", cl.ID, err)
 		}
+		seen[cl.CampaignID] = true
 		// Small jitter between sends to look human and spread load.
 		time.Sleep(time.Duration(500+rand.Intn(1500)) * time.Millisecond)
+	}
+	// A campaign whose last active lead just finished should flip to completed.
+	for cid := range seen {
+		if done, err := s.st.MaybeCompleteCampaign(ctx, cid); err != nil {
+			s.log.Printf("sender: complete check campaign %d: %v", cid, err)
+		} else if done {
+			s.log.Printf("sender: campaign %d completed (all leads finished)", cid)
+		}
 	}
 }
 
