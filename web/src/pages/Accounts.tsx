@@ -92,7 +92,7 @@ export default function Accounts() {
         <table>
           <thead><tr>
             <th>Email</th><th>Daily cap</th><th>Sent today</th><th>Sent total</th>
-            <th>Replies today</th><th>Replies total</th><th>Reply rate</th><th>Warmup</th><th>Status</th><th></th>
+            <th>Replies today</th><th>Replies total</th><th>Reply rate</th><th>Warmup</th><th>Reply polling</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>
             {accounts.map((a) => {
@@ -113,6 +113,7 @@ export default function Accounts() {
                     <input type="checkbox" style={{ width: "auto" }} defaultChecked={a.warmup_enabled}
                       onChange={(e) => saveSettings(a, a.daily_limit, e.target.checked, a.warmup_target_per_day)} />
                   </td>
+                  <td><PollHealth account={a} /></td>
                   <td>
                     <span className={`badge ${a.status}`} title={a.last_error || undefined}>{a.status}</span>
                     {a.status !== "active" && a.last_error && (
@@ -123,7 +124,7 @@ export default function Accounts() {
                 </tr>
               );
             })}
-            {accounts.length === 0 && <tr><td colSpan={10} className="muted">No accounts yet.</td></tr>}
+            {accounts.length === 0 && <tr><td colSpan={11} className="muted">No accounts yet.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -251,5 +252,27 @@ export default function Accounts() {
         )}
       </div>
     </div>
+  );
+}
+
+// PollHealth shows whether the reply poller can read this mailbox's inbox.
+// A failing IMAP poll means replies to this inbox won't be detected.
+function PollHealth({ account }: { account: Account }) {
+  const when = account.imap_last_polled_at ? new Date(account.imap_last_polled_at).toLocaleString() : null;
+  if (!when) return <span className="muted" title="Not polled yet">—</span>;
+  if (account.imap_last_error) {
+    return (
+      <span>
+        <span className="badge bounced" title={account.imap_last_error}>failing</span>
+        <div className="muted" style={{ fontSize: 11, maxWidth: 240, marginTop: 2 }}>{account.imap_last_error}</div>
+        <div className="muted" style={{ fontSize: 11 }}>last tried {when}</div>
+      </span>
+    );
+  }
+  return (
+    <span>
+      <span className="badge active" title="Inbox read successfully — replies will be detected">ok</span>
+      <div className="muted" style={{ fontSize: 11 }}>{when}</div>
+    </span>
   );
 }

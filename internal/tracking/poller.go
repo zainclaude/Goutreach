@@ -47,9 +47,13 @@ func (p *Poller) tick(ctx context.Context) {
 		return
 	}
 	for _, acc := range accounts {
+		errMsg := ""
 		if err := p.pollAccount(ctx, acc); err != nil {
+			errMsg = err.Error()
 			p.log.Printf("poller: account %d (%s): %v", acc.ID, acc.Email, err)
 		}
+		// Record poll health (success clears the error) for the Accounts page.
+		_ = p.st.RecordPollResult(ctx, acc.ID, errMsg)
 	}
 }
 

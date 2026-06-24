@@ -8,35 +8,38 @@ import (
 // EmailAccount is a connected sending/receiving mailbox. Password fields hold
 // AES-GCM ciphertext and are never serialized to JSON.
 type EmailAccount struct {
-	ID                   int64     `json:"id"`
-	UserID               int64     `json:"user_id"`
-	Email                string    `json:"email"`
-	FromName             string    `json:"from_name"`
-	SMTPHost             string    `json:"smtp_host"`
-	SMTPPort             int       `json:"smtp_port"`
-	SMTPUsername         string    `json:"smtp_username"`
-	SMTPPasswordEnc      string    `json:"-"`
-	IMAPHost             string    `json:"imap_host"`
-	IMAPPort             int       `json:"imap_port"`
-	IMAPUsername         string    `json:"imap_username"`
-	IMAPPasswordEnc      string    `json:"-"`
-	DailyLimit           int       `json:"daily_limit"`
-	WarmupEnabled        bool      `json:"warmup_enabled"`
-	WarmupTargetPerDay   int       `json:"warmup_target_per_day"`
-	Status               string    `json:"status"`
-	LastError            string    `json:"last_error"`
-	AuthType             string    `json:"auth_type"` // "password" | "oauth"
-	OAuthRefreshTokenEnc string    `json:"-"`
-	Source               string    `json:"source"`      // manual|csv|oauth|maildoso
-	ExternalID           string    `json:"external_id"` // vendor mailbox id, if provisioned
-	IMAPLastUID          int64     `json:"-"`           // reply-poller UID watermark
-	CreatedAt            time.Time `json:"created_at"`
+	ID                   int64      `json:"id"`
+	UserID               int64      `json:"user_id"`
+	Email                string     `json:"email"`
+	FromName             string     `json:"from_name"`
+	SMTPHost             string     `json:"smtp_host"`
+	SMTPPort             int        `json:"smtp_port"`
+	SMTPUsername         string     `json:"smtp_username"`
+	SMTPPasswordEnc      string     `json:"-"`
+	IMAPHost             string     `json:"imap_host"`
+	IMAPPort             int        `json:"imap_port"`
+	IMAPUsername         string     `json:"imap_username"`
+	IMAPPasswordEnc      string     `json:"-"`
+	DailyLimit           int        `json:"daily_limit"`
+	WarmupEnabled        bool       `json:"warmup_enabled"`
+	WarmupTargetPerDay   int        `json:"warmup_target_per_day"`
+	Status               string     `json:"status"`
+	LastError            string     `json:"last_error"`
+	AuthType             string     `json:"auth_type"` // "password" | "oauth"
+	OAuthRefreshTokenEnc string     `json:"-"`
+	Source               string     `json:"source"`              // manual|csv|oauth|maildoso
+	ExternalID           string     `json:"external_id"`         // vendor mailbox id, if provisioned
+	IMAPLastUID          int64      `json:"-"`                   // reply-poller UID watermark
+	IMAPLastPolledAt     *time.Time `json:"imap_last_polled_at"` // last reply-poll attempt
+	IMAPLastError        string     `json:"imap_last_error"`     // last reply-poll error ("" = ok)
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 const accountCols = `id, user_id, email, from_name, smtp_host, smtp_port, smtp_username,
 	smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc,
 	daily_limit, warmup_enabled, warmup_target_per_day, status, last_error,
-	auth_type, oauth_refresh_token_enc, source, external_id, imap_last_uid, created_at`
+	auth_type, oauth_refresh_token_enc, source, external_id, imap_last_uid,
+	imap_last_polled_at, imap_last_error, created_at`
 
 func scanAccount(row interface{ Scan(...any) error }) (EmailAccount, error) {
 	var a EmailAccount
@@ -44,8 +47,17 @@ func scanAccount(row interface{ Scan(...any) error }) (EmailAccount, error) {
 		&a.SMTPUsername, &a.SMTPPasswordEnc, &a.IMAPHost, &a.IMAPPort, &a.IMAPUsername,
 		&a.IMAPPasswordEnc, &a.DailyLimit, &a.WarmupEnabled, &a.WarmupTargetPerDay,
 		&a.Status, &a.LastError, &a.AuthType, &a.OAuthRefreshTokenEnc, &a.Source,
-		&a.ExternalID, &a.IMAPLastUID, &a.CreatedAt)
+		&a.ExternalID, &a.IMAPLastUID, &a.IMAPLastPolledAt, &a.IMAPLastError, &a.CreatedAt)
 	return a, err
+}
+
+// RecordPollResult stamps the last reply-poll time and error ("" clears it) so
+// the Accounts page can show whether each mailbox is being read successfully.
+func (s *Store) RecordPollResult(ctx context.Context, accountID int64, pollErr string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE email_accounts SET imap_last_polled_at=now(), imap_last_error=$2 WHERE id=$1`,
+		accountID, pollErr)
+	return err
 }
 
 // SetIMAPLastUID advances the reply-poller UID watermark for an account.

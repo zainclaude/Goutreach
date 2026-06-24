@@ -70,6 +70,7 @@ export interface Account {
   smtp_host: string; imap_host: string;
   daily_limit: number; warmup_enabled: boolean; warmup_target_per_day: number;
   status: string; last_error: string;
+  imap_last_polled_at: string | null; imap_last_error: string;
 }
 export interface AccountStat {
   account_id: number; email: string;
