@@ -58,9 +58,13 @@ func (p *Poller) pollAccount(ctx context.Context, acc store.EmailAccount) error 
 	if err != nil {
 		return err
 	}
-	if err := mailer.Poll(ctx, creds, 50, func(in mailer.InboundMessage) error {
-		return p.handleInbound(ctx, acc, in)
-	}); err != nil {
+	newUID, err := mailer.Poll(ctx, creds, uint32(acc.IMAPLastUID), 50, func(in mailer.InboundMessage, seen bool) error {
+		return p.handleInbound(ctx, acc, in, seen)
+	})
+	if newUID > uint32(acc.IMAPLastUID) {
+		_ = p.st.SetIMAPLastUID(ctx, acc.ID, int64(newUID))
+	}
+	if err != nil {
 		return err
 	}
 
@@ -80,7 +84,7 @@ func (p *Poller) pollAccount(ctx context.Context, acc store.EmailAccount) error 
 	return nil
 }
 
-func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in mailer.InboundMessage) error {
+func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in mailer.InboundMessage, seen bool) error {
 	// Warmup mail we sent: marking it Seen (handled by Poll) is the warmup "open".
 	// Reply to a fraction of warmup mail to build two-way reputation.
 	if in.MessageID != "" {
@@ -88,7 +92,9 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 		if isWarmup, _ := p.st.FindWarmupByMessageID(ctx, mid); isWarmup {
 			// It reached the inbox (the poller only reads INBOX) — record placement.
 			_ = p.st.SetWarmupStatusByMessageID(ctx, mid, "received")
-			if rand.Float64() < 0.4 {
+			// Only auto-reply to genuinely new (unread) warmup mail, so reprocessing
+			// already-seen mail on a watermark backfill doesn't re-send replies.
+			if !seen && rand.Float64() < 0.4 {
 				p.replyWarmup(ctx, acc, in)
 			}
 			return nil

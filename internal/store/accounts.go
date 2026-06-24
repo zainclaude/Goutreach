@@ -29,13 +29,14 @@ type EmailAccount struct {
 	OAuthRefreshTokenEnc string    `json:"-"`
 	Source               string    `json:"source"`      // manual|csv|oauth|maildoso
 	ExternalID           string    `json:"external_id"` // vendor mailbox id, if provisioned
+	IMAPLastUID          int64     `json:"-"`           // reply-poller UID watermark
 	CreatedAt            time.Time `json:"created_at"`
 }
 
 const accountCols = `id, user_id, email, from_name, smtp_host, smtp_port, smtp_username,
 	smtp_password_enc, imap_host, imap_port, imap_username, imap_password_enc,
 	daily_limit, warmup_enabled, warmup_target_per_day, status, last_error,
-	auth_type, oauth_refresh_token_enc, source, external_id, created_at`
+	auth_type, oauth_refresh_token_enc, source, external_id, imap_last_uid, created_at`
 
 func scanAccount(row interface{ Scan(...any) error }) (EmailAccount, error) {
 	var a EmailAccount
@@ -43,8 +44,16 @@ func scanAccount(row interface{ Scan(...any) error }) (EmailAccount, error) {
 		&a.SMTPUsername, &a.SMTPPasswordEnc, &a.IMAPHost, &a.IMAPPort, &a.IMAPUsername,
 		&a.IMAPPasswordEnc, &a.DailyLimit, &a.WarmupEnabled, &a.WarmupTargetPerDay,
 		&a.Status, &a.LastError, &a.AuthType, &a.OAuthRefreshTokenEnc, &a.Source,
-		&a.ExternalID, &a.CreatedAt)
+		&a.ExternalID, &a.IMAPLastUID, &a.CreatedAt)
 	return a, err
+}
+
+// SetIMAPLastUID advances the reply-poller UID watermark for an account.
+func (s *Store) SetIMAPLastUID(ctx context.Context, accountID, uid int64) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE email_accounts SET imap_last_uid=$2 WHERE id=$1 AND imap_last_uid < $2`,
+		accountID, uid)
+	return err
 }
 
 // CreateAccount inserts a new email account.

@@ -181,28 +181,44 @@ func ScanSpamForWarmup(ctx context.Context, creds IMAPCreds, isWarmup func(messa
 
 // Poll fetches UNSEEN messages from INBOX, invokes handle for each, and marks
 // successfully-handled messages as \Seen so they are not reprocessed.
-func Poll(ctx context.Context, creds IMAPCreds, max int, handle func(InboundMessage) error) error {
+// Poll reads INBOX messages whose UID is greater than sinceUID (the per-account
+// watermark) and invokes handle for each, passing whether the message was already
+// flagged Seen. It returns the highest UID it successfully handled so the caller
+// can persist the new watermark. Reading by UID (not the UNSEEN flag) means a
+// reply already opened in the mailbox is still detected. On the first run
+// (sinceUID == 0) it bounds the backlog to the last 30 days and `max` messages.
+func Poll(ctx context.Context, creds IMAPCreds, sinceUID uint32, max int, handle func(InboundMessage, bool) error) (uint32, error) {
 	c, err := dialIMAP(creds)
 	if err != nil {
-		return err
+		return sinceUID, err
 	}
 	defer c.Logout().Wait()
 
 	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
-		return fmt.Errorf("select inbox: %w", err)
+		return sinceUID, fmt.Errorf("select inbox: %w", err)
 	}
 
-	criteria := &imap.SearchCriteria{
-		NotFlag: []imap.Flag{imap.FlagSeen},
-		Since:   time.Now().Add(-30 * 24 * time.Hour),
+	criteria := &imap.SearchCriteria{}
+	if sinceUID == 0 {
+		criteria.Since = time.Now().Add(-30 * 24 * time.Hour)
+	} else {
+		var set imap.UIDSet
+		set.AddRange(imap.UID(sinceUID+1), 0) // sinceUID+1 .. * (0 means "no upper bound")
+		criteria.UID = []imap.UIDSet{set}
 	}
 	searchData, err := c.UIDSearch(criteria, nil).Wait()
 	if err != nil {
-		return fmt.Errorf("search: %w", err)
+		return sinceUID, fmt.Errorf("search: %w", err)
 	}
-	uids := searchData.AllUIDs()
+	// Keep only UIDs strictly above the watermark, newest-first capped at max.
+	var uids []imap.UID
+	for _, u := range searchData.AllUIDs() {
+		if uint32(u) > sinceUID {
+			uids = append(uids, u)
+		}
+	}
 	if len(uids) == 0 {
-		return nil
+		return sinceUID, nil
 	}
 	if max > 0 && len(uids) > max {
 		uids = uids[len(uids)-max:]
@@ -211,15 +227,17 @@ func Poll(ctx context.Context, creds IMAPCreds, max int, handle func(InboundMess
 	uidSet := imap.UIDSetNum(uids...)
 	fetchOpts := &imap.FetchOptions{
 		Envelope: true,
+		Flags:    true,
 		BodySection: []*imap.FetchItemBodySection{
 			{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"References"}},
 		},
 	}
 	msgs, err := c.Fetch(uidSet, fetchOpts).Collect()
 	if err != nil {
-		return fmt.Errorf("fetch: %w", err)
+		return sinceUID, fmt.Errorf("fetch: %w", err)
 	}
 
+	high := sinceUID
 	var handled []imap.UID
 	for _, m := range msgs {
 		in := InboundMessage{UID: m.UID}
@@ -234,18 +252,30 @@ func Poll(ctx context.Context, creds IMAPCreds, max int, handle func(InboundMess
 		for _, bs := range m.BodySection {
 			in.References = parseReferences(string(bs.Bytes))
 		}
-		if err := handle(in); err == nil {
+		seen := false
+		for _, f := range m.Flags {
+			if f == imap.FlagSeen {
+				seen = true
+			}
+		}
+		if err := handle(in, seen); err == nil {
 			handled = append(handled, m.UID)
+			if uint32(m.UID) > high {
+				high = uint32(m.UID)
+			}
 		}
 	}
 
+	// Mark handled messages Seen — this is the warmup "open" engagement signal.
+	// Dedup no longer depends on it (the UID watermark does), so a reply read in
+	// the mailbox first is still detected.
 	if len(handled) > 0 {
 		flags := &imap.StoreFlags{Op: imap.StoreFlagsAdd, Flags: []imap.Flag{imap.FlagSeen}}
 		if err := c.Store(imap.UIDSetNum(handled...), flags, nil).Close(); err != nil {
-			return fmt.Errorf("mark seen: %w", err)
+			return high, fmt.Errorf("mark seen: %w", err)
 		}
 	}
-	return nil
+	return high, nil
 }
 
 // MarkImportant moves a message towards the primary inbox by flagging it (warmup).
