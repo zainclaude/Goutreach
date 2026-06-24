@@ -73,6 +73,9 @@ func (s *Service) warmAccount(ctx context.Context, acc store.EmailAccount, all [
 		return err
 	}
 	remaining := target - sent
+	days := int(now.Sub(anchor).Hours() / 24)
+	s.log.Printf("warmup: %s — target today=%d (day %d since first send), sent today=%d, remaining=%d, cap=%d",
+		acc.Email, target, days, sent, remaining, acc.WarmupTargetPerDay)
 	if remaining <= 0 {
 		return nil
 	}
