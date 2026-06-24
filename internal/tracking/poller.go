@@ -129,6 +129,11 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 		return nil // not related to our outreach
 	}
 
+	// Capture the lead's reply text (idempotent — also backfills replies that
+	// were detected before reply bodies were stored).
+	if in.Text != "" {
+		_ = p.st.SetReplyBody(ctx, msg.ID, in.Text)
+	}
 	if msg.Status != "replied" {
 		_ = p.st.SetMessageStatus(ctx, msg.ID, "replied")
 		_ = p.st.CreateEvent(ctx, msg.ID, "reply", map[string]any{

@@ -19,6 +19,13 @@ type ReplyThread struct {
 	CampaignID   int64      `json:"campaign_id"`
 	CampaignName string     `json:"campaign_name"`
 	ReplySnippet string     `json:"reply_snippet"`
+	ReplyBody    string     `json:"reply_body"` // the lead's actual reply text
+}
+
+// SetReplyBody stores the lead's parsed reply text on a message (idempotent).
+func (s *Store) SetReplyBody(ctx context.Context, id int64, body string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE messages SET reply_body=$2 WHERE id=$1`, id, body)
+	return err
 }
 
 // ListReplies returns campaign messages that received a reply (warmup excluded:
@@ -29,7 +36,8 @@ func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, e
 		       (SELECT max(created_at) FROM events e WHERE e.message_id=m.id AND e.type='reply') AS replied_at,
 		       l.email, trim(l.first_name || ' ' || l.last_name), c.id, c.name,
 		       COALESCE((SELECT metadata->>'subject' FROM events e
-		                 WHERE e.message_id=m.id AND e.type='reply' ORDER BY id DESC LIMIT 1), '')
+		                 WHERE e.message_id=m.id AND e.type='reply' ORDER BY id DESC LIMIT 1), ''),
+		       m.reply_body
 		FROM messages m
 		JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
 		JOIN leads l ON l.id = cl.lead_id
@@ -45,7 +53,7 @@ func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, e
 		var t ReplyThread
 		if err := rows.Scan(&t.MessageID, &t.AccountID, &t.RFCMessageID, &t.Subject, &t.Body,
 			&t.SentAt, &t.RepliedAt, &t.LeadEmail, &t.LeadName, &t.CampaignID, &t.CampaignName,
-			&t.ReplySnippet); err != nil {
+			&t.ReplySnippet, &t.ReplyBody); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

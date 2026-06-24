@@ -119,5 +119,5 @@ export interface Setting { key: string; value: string; is_secret: boolean; }
 export interface Reply {
   message_id: number; subject: string; body: string;
   lead_email: string; lead_name: string; campaign_name: string;
-  replied_at: string | null; reply_snippet: string;
+  replied_at: string | null; reply_snippet: string; reply_body: string;
 }

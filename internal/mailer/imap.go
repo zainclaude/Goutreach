@@ -46,6 +46,7 @@ type InboundMessage struct {
 	References string
 	FromAddr   string
 	Subject    string
+	Text       string // plaintext body of the message (best-effort, quotes trimmed)
 }
 
 // isTransientNet reports whether a network error is worth retrying — notably the
@@ -258,7 +259,7 @@ func Poll(ctx context.Context, creds IMAPCreds, sinceUID uint32, max int, handle
 		Envelope: true,
 		Flags:    true,
 		BodySection: []*imap.FetchItemBodySection{
-			{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"References"}},
+			{Peek: true}, // entire message (BODY.PEEK[]) so we can read the reply body
 		},
 	}
 	msgs, err := c.Fetch(uidSet, fetchOpts).Collect()
@@ -279,7 +280,13 @@ func Poll(ctx context.Context, creds IMAPCreds, sinceUID uint32, max int, handle
 			}
 		}
 		for _, bs := range m.BodySection {
-			in.References = parseReferences(string(bs.Bytes))
+			refs, text := parseMessage(bs.Bytes)
+			if refs != "" {
+				in.References = refs
+			}
+			if text != "" {
+				in.Text = text
+			}
 		}
 		seen := false
 		for _, f := range m.Flags {
@@ -305,14 +312,4 @@ func Poll(ctx context.Context, creds IMAPCreds, sinceUID uint32, max int, handle
 		}
 	}
 	return high, nil
-}
-
-// MarkImportant moves a message towards the primary inbox by flagging it (warmup).
-func parseReferences(headerBlob string) string {
-	for _, line := range strings.Split(headerBlob, "\r\n") {
-		if strings.HasPrefix(strings.ToLower(line), "references:") {
-			return strings.TrimSpace(line[len("references:"):])
-		}
-	}
-	return ""
 }

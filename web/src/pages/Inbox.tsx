@@ -42,11 +42,19 @@ export default function Inbox() {
           <div className="card" style={{ flex: 1, minWidth: 360 }}>
             <h3>Re: {active.subject}</h3>
             <p className="muted">To: {active.lead_email} ({active.campaign_name})</p>
-            <div className="card" style={{ background: "var(--panel2)" }}>
-              <div className="muted">Your original email:</div>
-              <div style={{ whiteSpace: "pre-wrap" }}>{active.body}</div>
+            <div className="card" style={{ background: "var(--panel2)", borderLeft: "3px solid #6c8cff" }}>
+              <div className="muted">{active.lead_name || active.lead_email} replied{active.replied_at ? ` · ${new Date(active.replied_at).toLocaleString()}` : ""}:</div>
+              <div style={{ whiteSpace: "pre-wrap" }}>
+                {active.reply_body
+                  ? active.reply_body
+                  : <span className="muted">(reply text not captured yet — it'll appear after the next inbox poll)</span>}
+              </div>
             </div>
-            <label>Your reply</label>
+            <details style={{ marginTop: 8 }}>
+              <summary className="muted" style={{ cursor: "pointer" }}>Your original email</summary>
+              <div style={{ whiteSpace: "pre-wrap", marginTop: 6 }}>{active.body}</div>
+            </details>
+            <label style={{ marginTop: 8, display: "block" }}>Your reply</label>
             <textarea value={body} onChange={(e) => setBody(e.target.value)} style={{ minHeight: 140 }} />
             {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
             <div style={{ marginTop: 8 }}><button onClick={send}>Send reply</button></div>
