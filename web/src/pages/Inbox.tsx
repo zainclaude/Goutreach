@@ -5,6 +5,7 @@ export default function Inbox() {
   const [replies, setReplies] = useState<Reply[]>([]);
   const [active, setActive] = useState<Reply | null>(null);
   const [body, setBody] = useState("");
+  const [cc, setCc] = useState("");
   const [msg, setMsg] = useState("");
 
   const load = () => api.get<Reply[]>("/replies").then((r) => setReplies(r || []));
@@ -13,7 +14,7 @@ export default function Inbox() {
   const send = async () => {
     if (!active) return;
     setMsg("");
-    try { await api.post(`/replies/${active.message_id}/reply`, { body }); setMsg("Reply sent ✓"); setBody(""); }
+    try { await api.post(`/replies/${active.message_id}/reply`, { body, cc }); setMsg("Reply sent ✓"); setBody(""); setCc(""); }
     catch (e: any) { setMsg("✗ " + e.message); }
   };
 
@@ -27,7 +28,7 @@ export default function Inbox() {
             <thead><tr><th>From</th><th>Campaign</th><th>When</th></tr></thead>
             <tbody>
               {replies.map((r) => (
-                <tr key={r.message_id} style={{ cursor: "pointer" }} onClick={() => { setActive(r); setMsg(""); }}>
+                <tr key={r.message_id} style={{ cursor: "pointer" }} onClick={() => { setActive(r); setMsg(""); setCc(""); setBody(""); }}>
                   <td>{r.lead_name || r.lead_email}<div className="muted">{r.lead_email}</div></td>
                   <td>{r.campaign_name}</td>
                   <td className="muted">{r.replied_at ? new Date(r.replied_at).toLocaleString() : ""}</td>
@@ -54,6 +55,8 @@ export default function Inbox() {
               <summary className="muted" style={{ cursor: "pointer" }}>Your original email</summary>
               <div style={{ whiteSpace: "pre-wrap", marginTop: 6 }}>{active.body}</div>
             </details>
+            <label style={{ marginTop: 8, display: "block" }}>Cc <span className="muted">(optional, comma-separated)</span></label>
+            <input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="teammate@agency.com, client@brand.com" />
             <label style={{ marginTop: 8, display: "block" }}>Your reply</label>
             <textarea value={body} onChange={(e) => setBody(e.target.value)} style={{ minHeight: 140 }} />
             {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}

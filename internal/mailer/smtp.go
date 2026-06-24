@@ -25,6 +25,7 @@ type OutgoingEmail struct {
 	FromName  string
 	ToAddr    string
 	ToName    string
+	Cc        []string // optional carbon-copy recipients
 	Subject   string
 	HTMLBody  string
 	TextBody  string
@@ -93,6 +94,11 @@ func Send(ctx context.Context, c SMTPCreds, e OutgoingEmail) (string, error) {
 	}
 	if err := msg.AddToFormat(e.ToName, e.ToAddr); err != nil {
 		return "", fmt.Errorf("to: %w", err)
+	}
+	if len(e.Cc) > 0 {
+		if err := msg.Cc(e.Cc...); err != nil {
+			return "", fmt.Errorf("cc: %w", err)
+		}
 	}
 	msg.Subject(e.Subject)
 

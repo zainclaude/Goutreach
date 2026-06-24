@@ -22,10 +22,19 @@ func (s *Server) handleListReplies(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSendReply(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Body string `json:"body"`
+		Cc   string `json:"cc"` // comma/space/semicolon separated addresses
 	}
 	if err := readJSON(r, &req); err != nil || strings.TrimSpace(req.Body) == "" {
 		writeErr(w, http.StatusBadRequest, "body required")
 		return
+	}
+	var cc []string
+	for _, addr := range strings.FieldsFunc(req.Cc, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t'
+	}) {
+		if addr = strings.TrimSpace(addr); addr != "" {
+			cc = append(cc, addr)
+		}
 	}
 	msg, acc, lead, ok, err := s.st.GetReplyContext(r.Context(), s.userID(r), idParam(r))
 	if err != nil {
@@ -51,6 +60,7 @@ func (s *Server) handleSendReply(w http.ResponseWriter, r *http.Request) {
 		FromName:  acc.FromName,
 		ToAddr:    lead.Email,
 		ToName:    strings.TrimSpace(lead.FirstName + " " + lead.LastName),
+		Cc:        cc,
 		Subject:   subject,
 		TextBody:  req.Body,
 		InReplyTo: msg.MessageID,
