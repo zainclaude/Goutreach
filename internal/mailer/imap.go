@@ -156,7 +156,7 @@ func ScanSpamForWarmup(ctx context.Context, creds IMAPCreds, isWarmup func(messa
 	if err != nil {
 		return nil, annotateIMAP(err, creds, &debug)
 	}
-	defer c.Logout().Wait()
+	defer func() { _ = c.Logout().Wait() }()
 
 	var selected bool
 	for _, name := range spamFolderNames {
@@ -221,7 +221,7 @@ func Poll(ctx context.Context, creds IMAPCreds, sinceUID uint32, max int, handle
 	if err != nil {
 		return sinceUID, annotateIMAP(err, creds, &debug)
 	}
-	defer c.Logout().Wait()
+	defer func() { _ = c.Logout().Wait() }()
 
 	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
 		return sinceUID, annotateIMAP(fmt.Errorf("select inbox: %w", err), creds, &debug)
