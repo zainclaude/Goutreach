@@ -58,7 +58,16 @@ func (s *Service) tick(ctx context.Context) {
 }
 
 func (s *Service) warmAccount(ctx context.Context, acc store.EmailAccount, all []store.EmailAccount) error {
-	target := rampTarget(acc, time.Now())
+	now := time.Now()
+	// Anchor the ramp on the first warmup send so a long-idle inbox still eases
+	// in from 2/day. Before any send (and on the first day), the anchor is now.
+	anchor := now
+	if first, ok, err := s.st.FirstWarmupSentAt(ctx, acc.ID); err != nil {
+		return err
+	} else if ok {
+		anchor = first
+	}
+	target := rampTarget(acc, anchor, now)
 	sent, err := s.st.CountWarmupSentToday(ctx, acc.ID)
 	if err != nil {
 		return err
@@ -102,16 +111,20 @@ func (s *Service) warmAccount(ctx context.Context, acc store.EmailAccount, all [
 	return nil
 }
 
-// rampTarget grows the daily warmup volume with mailbox age, capped at the
-// account's configured target.
-func rampTarget(acc store.EmailAccount, now time.Time) int {
+// rampTarget grows the daily warmup volume with the number of days since the
+// account's first warmup send (anchor), capped at the account's configured
+// target. Day 0 = 2/day, then +3/day (2, 5, 8, …) until the cap.
+func rampTarget(acc store.EmailAccount, anchor, now time.Time) int {
 	// An unset/zero per-account cap means "use the default" — otherwise the cap
 	// below would pin the ramp at the floor (2/day) forever and it'd never grow.
 	maxPerDay := acc.WarmupTargetPerDay
 	if maxPerDay <= 0 {
 		maxPerDay = 20
 	}
-	days := int(now.Sub(acc.CreatedAt).Hours() / 24)
+	days := int(now.Sub(anchor).Hours() / 24)
+	if days < 0 {
+		days = 0
+	}
 	target := 2 + days*3
 	if target > maxPerDay {
 		target = maxPerDay

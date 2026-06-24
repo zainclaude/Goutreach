@@ -1,6 +1,9 @@
 package store
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // RecordWarmupSent records an outbound warmup message.
 func (s *Store) RecordWarmupSent(ctx context.Context, fromAccount, toAccount int64, subject, messageID string) error {
@@ -18,6 +21,21 @@ func (s *Store) CountWarmupSentToday(ctx context.Context, accountID int64) (int,
 		 WHERE from_account_id=$1 AND created_at >= date_trunc('day', now())`,
 		accountID).Scan(&n)
 	return n, err
+}
+
+// FirstWarmupSentAt returns when an account sent its first warmup message. The
+// warmup ramp is anchored here (not account creation) so every inbox eases in
+// from 2/day on its first sending day regardless of how long it sat idle. The
+// bool is false if the account has never sent a warmup message.
+func (s *Store) FirstWarmupSentAt(ctx context.Context, accountID int64) (time.Time, bool, error) {
+	var t *time.Time
+	err := s.pool.QueryRow(ctx,
+		`SELECT min(created_at) FROM warmup_messages WHERE from_account_id=$1`,
+		accountID).Scan(&t)
+	if err != nil || t == nil {
+		return time.Time{}, false, err
+	}
+	return *t, true, nil
 }
 
 // FindWarmupByMessageID returns whether an inbound message-id corresponds to one

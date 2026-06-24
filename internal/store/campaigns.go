@@ -117,20 +117,20 @@ func (s *Store) SetCampaignStatus(ctx context.Context, userID, id int64, status 
 	return err
 }
 
-// MaybeCompleteCampaign marks a running campaign "completed" once every enrolled
-// lead has finished (no leads still in the 'active' state). Campaigns with no
-// leads at all are left running. Returns true if it transitioned to completed.
-func (s *Store) MaybeCompleteCampaign(ctx context.Context, campaignID int64) (bool, error) {
+// CompleteFinishedCampaigns marks every running campaign "completed" once all of
+// its enrolled leads have finished (none still 'active'). Campaigns with no leads
+// at all are left running. Returns how many transitioned. Run as a periodic sweep
+// so campaigns that finished before being checked still get completed.
+func (s *Store) CompleteFinishedCampaigns(ctx context.Context) (int, error) {
 	ct, err := s.pool.Exec(ctx, `
-		UPDATE campaigns SET status='completed'
-		WHERE id=$1 AND status='running'
-		  AND EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id=$1)
-		  AND NOT EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id=$1 AND status='active')`,
-		campaignID)
+		UPDATE campaigns c SET status='completed'
+		WHERE c.status='running'
+		  AND EXISTS (SELECT 1 FROM campaign_leads cl WHERE cl.campaign_id=c.id)
+		  AND NOT EXISTS (SELECT 1 FROM campaign_leads cl WHERE cl.campaign_id=c.id AND cl.status='active')`)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	return ct.RowsAffected() > 0, nil
+	return int(ct.RowsAffected()), nil
 }
 
 // ReactivateIfCompleted flips a completed campaign back to running, e.g. after
