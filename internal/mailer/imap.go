@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -71,15 +72,16 @@ func isTransientNet(err error) bool {
 	return false
 }
 
-func dialIMAP(creds IMAPCreds) (*imapclient.Client, error) {
+func dialIMAP(creds IMAPCreds, debug *bytes.Buffer) (*imapclient.Client, error) {
 	addr := fmt.Sprintf("%s:%d", creds.Host, creds.Port)
+	opts := &imapclient.Options{DebugWriter: debug}
 	var c *imapclient.Client
 	var err error
 	for attempt := 0; attempt < 5; attempt++ {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 300 * time.Millisecond)
 		}
-		c, err = imapclient.DialTLS(addr, nil)
+		c, err = imapclient.DialTLS(addr, opts)
 		if err == nil || !isTransientNet(err) {
 			break
 		}
@@ -101,11 +103,36 @@ func dialIMAP(creds IMAPCreds) (*imapclient.Client, error) {
 	return c, nil
 }
 
+// annotateIMAP enriches a poll error with the host actually used and a redacted
+// tail of the IMAP protocol transcript, so the failure reason is visible in the
+// Accounts "Reply polling" cell instead of an opaque "unexpected EOF".
+func annotateIMAP(err error, creds IMAPCreds, debug *bytes.Buffer) error {
+	if err == nil {
+		return nil
+	}
+	t := debug.String()
+	for _, secret := range []string{creds.Password, creds.OAuthToken} {
+		if secret != "" {
+			t = strings.ReplaceAll(t, secret, "***")
+		}
+	}
+	t = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(t)
+	t = strings.TrimSpace(t)
+	if len(t) > 400 {
+		t = "…" + t[len(t)-400:]
+	}
+	if t == "" {
+		return fmt.Errorf("%w [imap %s:%d]", err, creds.Host, creds.Port)
+	}
+	return fmt.Errorf("%w [imap %s:%d trace: %s]", err, creds.Host, creds.Port, t)
+}
+
 // VerifyIMAP dials and authenticates, validating credentials.
 func VerifyIMAP(ctx context.Context, creds IMAPCreds) error {
-	c, err := dialIMAP(creds)
+	var debug bytes.Buffer
+	c, err := dialIMAP(creds, &debug)
 	if err != nil {
-		return err
+		return annotateIMAP(err, creds, &debug)
 	}
 	return c.Logout().Wait()
 }
@@ -124,9 +151,10 @@ var spamFolderNames = []string{"[Gmail]/Spam", "Junk", "Junk Email", "Spam", "Bu
 // the caller can record them as spam placements. Best-effort: returns nil if no
 // spam folder exists or it can't be read.
 func ScanSpamForWarmup(ctx context.Context, creds IMAPCreds, isWarmup func(messageID string) bool) ([]string, error) {
-	c, err := dialIMAP(creds)
+	var debug bytes.Buffer
+	c, err := dialIMAP(creds, &debug)
 	if err != nil {
-		return nil, err
+		return nil, annotateIMAP(err, creds, &debug)
 	}
 	defer c.Logout().Wait()
 
@@ -188,14 +216,15 @@ func ScanSpamForWarmup(ctx context.Context, creds IMAPCreds, isWarmup func(messa
 // reply already opened in the mailbox is still detected. On the first run
 // (sinceUID == 0) it bounds the backlog to the last 30 days and `max` messages.
 func Poll(ctx context.Context, creds IMAPCreds, sinceUID uint32, max int, handle func(InboundMessage, bool) error) (uint32, error) {
-	c, err := dialIMAP(creds)
+	var debug bytes.Buffer
+	c, err := dialIMAP(creds, &debug)
 	if err != nil {
-		return sinceUID, err
+		return sinceUID, annotateIMAP(err, creds, &debug)
 	}
 	defer c.Logout().Wait()
 
 	if _, err := c.Select("INBOX", nil).Wait(); err != nil {
-		return sinceUID, fmt.Errorf("select inbox: %w", err)
+		return sinceUID, annotateIMAP(fmt.Errorf("select inbox: %w", err), creds, &debug)
 	}
 
 	criteria := &imap.SearchCriteria{}
