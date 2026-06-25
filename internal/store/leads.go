@@ -18,7 +18,9 @@ type Lead struct {
 	CustomFields json.RawMessage `json:"custom_fields"`
 	Status       string          `json:"status"`
 	CreatedAt    time.Time       `json:"created_at"`
-	Contacted    bool            `json:"contacted"` // has ever had an email actually sent
+	Contacted    bool            `json:"contacted"`           // has ever had an email actually sent
+	Verification string          `json:"verification_status"` // unknown|valid|invalid|risky|catch_all
+	VerifiedAt   *time.Time      `json:"verified_at"`
 }
 
 // contactedExpr is true when a lead has a message that was actually sent (in any
@@ -26,13 +28,41 @@ type Lead struct {
 const contactedExpr = `EXISTS(SELECT 1 FROM campaign_leads cl JOIN messages m ON m.campaign_lead_id=cl.id
 	WHERE cl.lead_id = leads.id AND m.status IN ('sent','replied','bounced'))`
 
-const leadCols = `id, user_id, email, first_name, last_name, company, title, custom_fields, status, created_at`
+const leadCols = `id, user_id, email, first_name, last_name, company, title, custom_fields, status, created_at, verification_status, verified_at`
 
 func scanLead(row interface{ Scan(...any) error }) (Lead, error) {
 	var l Lead
 	err := row.Scan(&l.ID, &l.UserID, &l.Email, &l.FirstName, &l.LastName, &l.Company,
-		&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt)
+		&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt, &l.Verification, &l.VerifiedAt)
 	return l, err
+}
+
+// SetLeadVerification records a verification result for a lead.
+func (s *Store) SetLeadVerification(ctx context.Context, id int64, status string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE leads SET verification_status=$2, verified_at=now() WHERE id=$1`, id, status)
+	return err
+}
+
+// ListUnverifiedLeads returns leads that have not been verified yet (status
+// 'unknown'), for the user, up to limit.
+func (s *Store) ListUnverifiedLeads(ctx context.Context, userID int64, limit int) ([]Lead, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+leadCols+` FROM leads WHERE user_id=$1 AND verification_status='unknown'
+		 ORDER BY id LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Lead
+	for rows.Next() {
+		l, err := scanLead(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }
 
 // UpsertLead inserts or updates a lead by (user_id, email). Returns whether it was newly created.
@@ -54,7 +84,8 @@ func (s *Store) UpsertLead(ctx context.Context, l Lead) (Lead, bool, error) {
 	var out Lead
 	var inserted bool
 	err := row.Scan(&out.ID, &out.UserID, &out.Email, &out.FirstName, &out.LastName,
-		&out.Company, &out.Title, &out.CustomFields, &out.Status, &out.CreatedAt, &inserted)
+		&out.Company, &out.Title, &out.CustomFields, &out.Status, &out.CreatedAt,
+		&out.Verification, &out.VerifiedAt, &inserted)
 	return out, inserted, err
 }
 
@@ -71,7 +102,7 @@ func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	for rows.Next() {
 		var l Lead
 		if err := rows.Scan(&l.ID, &l.UserID, &l.Email, &l.FirstName, &l.LastName, &l.Company,
-			&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt, &l.Contacted); err != nil {
+			&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt, &l.Verification, &l.VerifiedAt, &l.Contacted); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

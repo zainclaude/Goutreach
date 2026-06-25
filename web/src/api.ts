@@ -85,6 +85,7 @@ export interface WarmupStat {
 export interface Lead {
   id: number; email: string; first_name: string; last_name: string;
   company: string; title: string; status: string; contacted: boolean;
+  verification_status: string; verified_at: string | null;
 }
 export interface Campaign {
   id: number; name: string; brief: string; status: string;

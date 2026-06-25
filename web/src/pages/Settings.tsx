@@ -73,6 +73,43 @@ export default function Settings() {
           <button onClick={() => save("blacklist_domains", false)}>Save blacklist</button>
         </div>
       </div>
+
+      <div className="card">
+        <h3>Email verification</h3>
+        <p className="muted">
+          Verify lead emails through a third-party provider so undeliverable addresses (even Apollo-sourced
+          ones that bounce as "address not found") are flagged and skipped at send time. Pick your provider,
+          paste its API key, then use <b>Verify emails</b> on the Leads page. New CSV imports auto-verify.
+        </p>
+        <div style={{ marginBottom: 10 }}>
+          <label>Provider</label>
+          <select
+            value={vals["email_verify_provider"] || "millionverifier"}
+            onChange={(e) => setVals({ ...vals, email_verify_provider: e.target.value })}
+          >
+            <option value="millionverifier">MillionVerifier</option>
+            <option value="zerobounce">ZeroBounce</option>
+            <option value="neverbounce">NeverBounce</option>
+            <option value="bouncer">Bouncer</option>
+          </select>
+          <div className="row" style={{ marginTop: 6 }}>
+            <button onClick={() => save("email_verify_provider", false)}>Save provider</button>
+          </div>
+        </div>
+        <div>
+          <label>API key {existing["email_verify_api_key"] && <span className="tag">set</span>}</label>
+          <div className="row">
+            <input
+              type="password"
+              value={vals["email_verify_api_key"] || ""}
+              placeholder={existing["email_verify_api_key"] ? "•••••••• (leave blank to keep)" : ""}
+              onChange={(e) => setVals({ ...vals, email_verify_api_key: e.target.value })}
+            />
+            <button onClick={() => save("email_verify_api_key", true)}>Save key</button>
+          </div>
+        </div>
+        {msg && <p className="ok">{msg}</p>}
+      </div>
     </div>
   );
 }

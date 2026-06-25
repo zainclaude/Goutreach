@@ -112,6 +112,7 @@ func (s *Server) Router() http.Handler {
 			r.Get("/", s.handleListLeads)
 			r.Post("/", s.handleCreateLead)
 			r.Post("/import", s.handleImportLeads)
+			r.Post("/verify", s.handleVerifyLeads)
 			r.Delete("/{id}", s.handleDeleteLead)
 		})
 

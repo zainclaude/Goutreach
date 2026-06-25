@@ -88,11 +88,15 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 		return s.st.AdvanceCampaignLead(ctx, cl.ID, cl.CurrentStep, next, "active")
 	}
 
-	// Skip leads whose domain is on the user's blacklist (re-checked at send time
-	// in case it was added after enrollment).
-	if bl, err := s.st.BlacklistedDomains(ctx, campaign.UserID); err == nil && len(bl) > 0 {
-		if lead, err := s.st.GetLead(ctx, cl.LeadID); err == nil && store.IsBlacklisted(bl, lead.Email) {
+	// Skip blacklisted (domain) or known-invalid (failed verification) leads at
+	// send time — re-checked here in case the status changed after enrollment.
+	if lead, err := s.st.GetLead(ctx, cl.LeadID); err == nil {
+		if bl, err := s.st.BlacklistedDomains(ctx, campaign.UserID); err == nil && store.IsBlacklisted(bl, lead.Email) {
 			s.log.Printf("sender: skipping blacklisted lead %s (campaign %d)", lead.Email, cl.CampaignID)
+			return s.st.SetCampaignLeadStatus(ctx, cl.ID, "skipped")
+		}
+		if lead.Verification == "invalid" {
+			s.log.Printf("sender: skipping invalid (unverifiable) lead %s (campaign %d)", lead.Email, cl.CampaignID)
 			return s.st.SetCampaignLeadStatus(ctx, cl.ID, "skipped")
 		}
 	}

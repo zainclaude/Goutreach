@@ -122,6 +122,10 @@ func (s *Server) handleImportLeads(w http.ResponseWriter, r *http.Request) {
 			updated++
 		}
 	}
+	// Verify newly imported addresses in the background (no-op if not configured).
+	if imported > 0 {
+		s.verifyUnverifiedAsync(s.userID(r))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"imported": imported, "updated": updated, "skipped": skipped,
 		"blacklisted": len(blacklisted), "blacklisted_emails": blacklisted,
