@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"math/rand"
+	"regexp"
 	"strings"
 	"time"
 
@@ -111,10 +112,14 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 	// and reference the original message.
 	if isBounce(in.FromAddr, in.Subject) {
 		if msg, ok, _ := p.st.FindSentMessageByThread(ctx, acc.ID, candidates); ok {
-			_ = p.st.SetMessageStatus(ctx, msg.ID, "bounced")
-			_ = p.st.CreateEvent(ctx, msg.ID, "bounce", map[string]any{"from": in.FromAddr})
-			if cl, err := p.st.GetCampaignLead(ctx, msg.CampaignLeadID); err == nil {
-				_ = p.st.SetCampaignLeadStatus(ctx, cl.ID, "bounced")
+			reason := bounceReason(in.Text)
+			_ = p.st.SetMessageBounced(ctx, msg.ID, reason)
+			p.log.Printf("poller: bounce msg %d via %s: %s", msg.ID, acc.Email, reason)
+			if msg.Status != "bounced" {
+				_ = p.st.CreateEvent(ctx, msg.ID, "bounce", map[string]any{"from": in.FromAddr, "reason": reason})
+				if cl, err := p.st.GetCampaignLead(ctx, msg.CampaignLeadID); err == nil {
+					_ = p.st.SetCampaignLeadStatus(ctx, cl.ID, "bounced")
+				}
 			}
 		}
 		return nil
@@ -183,6 +188,44 @@ func splitRefs(parts ...string) []string {
 		}
 	}
 	return out
+}
+
+var smtpCodeRe = regexp.MustCompile(`\b[45]\d\d(\s+\d\.\d+\.\d+)?\b`)
+
+// bounceReason extracts a concise human-readable reason from a bounce/NDR body:
+// the line carrying an SMTP status code or a known failure phrase, else the start
+// of the message. Best-effort — empty if nothing useful is found.
+func bounceReason(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	phrases := []string{"does not exist", "user unknown", "no such user", "unknown recipient",
+		"mailbox", "address not found", "not found", "disabled", "over quota", "quota exceeded",
+		"blocked", "rejected", "spam", "policy", "unable to deliver", "recipient", "relay"}
+	for _, ln := range strings.Split(text, "\n") {
+		l := strings.TrimSpace(ln)
+		if l == "" {
+			continue
+		}
+		if smtpCodeRe.MatchString(l) {
+			return clip(l, 240)
+		}
+		ll := strings.ToLower(l)
+		for _, p := range phrases {
+			if strings.Contains(ll, p) {
+				return clip(l, 240)
+			}
+		}
+	}
+	return clip(strings.Join(strings.Fields(text), " "), 240)
+}
+
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
 }
 
 func isBounce(from, subject string) bool {

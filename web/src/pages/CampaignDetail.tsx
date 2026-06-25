@@ -264,7 +264,7 @@ function MessageRow({ m, onApprove, onReject, onSave }:
       {open && (
         <tr>
           <td colSpan={6}>
-            {m.status === "failed" && m.error && <p className="err">⚠️ {m.error}</p>}
+            {(m.status === "failed" || m.status === "bounced") && m.error && <p className="err">⚠️ {m.status === "bounced" ? "Bounced: " : ""}{m.error}</p>}
             {m.research_notes && <p className="muted">🔎 {m.research_notes}</p>}
             <label>Subject</label>
             <input value={subject} onChange={(e) => setSubject(e.target.value)} />

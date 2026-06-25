@@ -121,6 +121,13 @@ func (s *Store) SetMessageFailed(ctx context.Context, id int64, errMsg string) e
 	return err
 }
 
+// SetMessageBounced marks a message bounced and stores the bounce reason (in the
+// error column, shown in the UI). Idempotent so a re-poll can backfill the reason.
+func (s *Store) SetMessageBounced(ctx context.Context, id int64, reason string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE messages SET status='bounced', error=$2 WHERE id=$1`, id, reason)
+	return err
+}
+
 // UpdateMessageContent edits a not-yet-sent message's subject/body.
 func (s *Store) UpdateMessageContent(ctx context.Context, id int64, subject, body string) error {
 	_, err := s.pool.Exec(ctx,
@@ -156,7 +163,7 @@ func (s *Store) FindSentMessageByThread(ctx context.Context, accountID int64, ca
 		}
 		row := s.pool.QueryRow(ctx,
 			`SELECT `+messageCols+` FROM messages
-			 WHERE account_id=$1 AND message_id=$2 AND status IN ('sent','replied') LIMIT 1`,
+			 WHERE account_id=$1 AND message_id=$2 AND status IN ('sent','replied','bounced') LIMIT 1`,
 			accountID, c)
 		m, err := scanMessage(row)
 		if err == nil {
