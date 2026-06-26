@@ -36,10 +36,10 @@ func New(provider, apiKey string) (Verifier, error) {
 	}
 	c := &http.Client{Timeout: 30 * time.Second}
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "", "millionverifier":
-		return &millionVerifier{key: apiKey, http: c}, nil
-	case "zerobounce":
+	case "", "zerobounce":
 		return &zeroBounce{key: apiKey, http: c}, nil
+	case "millionverifier":
+		return &millionVerifier{key: apiKey, http: c}, nil
 	case "neverbounce":
 		return &neverBounce{key: apiKey, http: c}, nil
 	case "bouncer":
