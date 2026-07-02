@@ -67,7 +67,7 @@ func main() {
 	resolver := mailauth.New(cipher, google)
 
 	snd := sender.New(st, resolver, gen, cfg.AppURL, logger)
-	poller := tracking.NewPoller(st, resolver, logger)
+	poller := tracking.NewPoller(st, resolver, cfg.AppURL, logger)
 	warm := warmup.New(st, resolver, logger)
 
 	// Background workers.

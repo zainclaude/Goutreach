@@ -2,6 +2,7 @@ package tracking
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"regexp"
@@ -16,14 +17,15 @@ import (
 // Poller periodically checks each account's IMAP inbox for replies and bounces,
 // and registers warmup deliveries.
 type Poller struct {
-	st  *store.Store
-	res *mailauth.Resolver
-	log *log.Logger
+	st     *store.Store
+	res    *mailauth.Resolver
+	appURL string
+	log    *log.Logger
 }
 
 // NewPoller builds a reply/bounce poller.
-func NewPoller(st *store.Store, res *mailauth.Resolver, logger *log.Logger) *Poller {
-	return &Poller{st: st, res: res, log: logger}
+func NewPoller(st *store.Store, res *mailauth.Resolver, appURL string, logger *log.Logger) *Poller {
+	return &Poller{st: st, res: res, appURL: appURL, log: logger}
 }
 
 // Run polls all active accounts on an interval until the context is cancelled.
@@ -149,8 +151,58 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 			// Stop the sequence for a lead that replied.
 			_ = p.st.SetCampaignLeadStatus(ctx, cl.ID, "replied")
 		}
+		// Notify the user + team that there's a reply waiting (first detection only).
+		p.notifyReply(ctx, acc, in)
 	}
 	return nil
+}
+
+// notifyReply emails the user's configured notification addresses that a lead
+// replied, so they can respond in PipelineBuilder. No-op if none are configured.
+func (p *Poller) notifyReply(ctx context.Context, acc store.EmailAccount, in mailer.InboundMessage) {
+	raw, ok, _ := p.st.GetSetting(ctx, acc.UserID, "notification_emails")
+	if !ok || strings.TrimSpace(raw) == "" {
+		return
+	}
+	var to []string
+	for _, a := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\t' || r == '\r'
+	}) {
+		if a = strings.TrimSpace(a); a != "" {
+			to = append(to, a)
+		}
+	}
+	if len(to) == 0 {
+		return
+	}
+	creds, err := p.res.SMTP(ctx, acc)
+	if err != nil {
+		p.log.Printf("notify: smtp creds %s: %v", acc.Email, err)
+		return
+	}
+	preview := strings.TrimSpace(in.Text)
+	if len(preview) > 500 {
+		preview = preview[:500] + "…"
+	}
+	linkLine := ""
+	if p.appURL != "" {
+		linkLine = "\nReply here: " + strings.TrimRight(p.appURL, "/") + "/inbox\n"
+	}
+	body := fmt.Sprintf("You have a new reply in PipelineBuilder.\n\nFrom: %s\nSubject: %s\nInbox: %s\n\n%s\n%s",
+		in.FromAddr, in.Subject, acc.Email, preview, linkLine)
+	subject := fmt.Sprintf("New reply from %s — respond in PipelineBuilder", in.FromAddr)
+	if _, err := mailer.Send(ctx, creds, mailer.OutgoingEmail{
+		FromAddr: acc.Email,
+		FromName: "PipelineBuilder",
+		ToAddr:   to[0],
+		Cc:       to[1:],
+		Subject:  subject,
+		TextBody: body,
+	}); err != nil {
+		p.log.Printf("notify: send to %v: %v", to, err)
+		return
+	}
+	p.log.Printf("notify: reply alert sent to %v (reply from %s)", to, in.FromAddr)
 }
 
 // replyWarmup sends a short reply to a received warmup message from this account.

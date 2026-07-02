@@ -75,6 +75,23 @@ export default function Settings() {
       </div>
 
       <div className="card">
+        <h3>Reply notifications</h3>
+        <p className="muted">
+          When a lead replies in your inbox, PipelineBuilder emails these addresses so you and your
+          salesperson know there's a response to reply to. One per line, or comma-separated.
+        </p>
+        <textarea
+          style={{ minHeight: 80, fontFamily: "monospace" }}
+          placeholder={"you@youragency.com\nsalesperson@youragency.com"}
+          value={vals["notification_emails"] || ""}
+          onChange={(e) => setVals({ ...vals, notification_emails: e.target.value })}
+        />
+        <div className="row" style={{ marginTop: 8 }}>
+          <button onClick={() => save("notification_emails", false)}>Save notification emails</button>
+        </div>
+      </div>
+
+      <div className="card">
         <h3>Email verification (ZeroBounce)</h3>
         <p className="muted">
           Verify lead emails through <b>ZeroBounce</b> so undeliverable addresses (even Apollo-sourced ones
