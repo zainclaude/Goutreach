@@ -52,7 +52,7 @@ export default function Leads() {
           <span className="muted">or import CSV (columns: email, first_name, last_name, company, title):</span>
           <input type="file" accept=".csv" onChange={onFile} style={{ width: "auto" }} />
         </div>
-        {msg && <p className="ok">{msg}</p>}
+        {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
       </div>
 
       <div className="card">
