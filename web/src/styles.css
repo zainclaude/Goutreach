@@ -57,3 +57,35 @@ th { color: var(--muted); font-weight: 600; }
 .login-card { width: 340px; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 .tag { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--panel2); border: 1px solid var(--border); }
+
+/* --- Mobile / narrow screens: stack the sidebar into a top nav, let wide
+   tables scroll inside their card, and collapse two-column grids. --- */
+@media (max-width: 768px) {
+  .layout { flex-direction: column; }
+  .sidebar {
+    width: 100%; border-right: none; border-bottom: 1px solid var(--border);
+    padding: 12px 14px; position: sticky; top: 0; z-index: 10;
+  }
+  .sidebar h1 { font-size: 17px; margin: 0 0 10px; }
+  .sidebar nav { display: flex; flex-wrap: wrap; gap: 6px; }
+  .sidebar nav a { margin: 0; padding: 8px 12px; white-space: nowrap; font-size: 14px; }
+  .sidebar > div { margin-top: 12px !important; }
+
+  .main { padding: 16px 14px; }
+  .grid2 { grid-template-columns: 1fr; }
+
+  /* Wide tables scroll horizontally within their card instead of squishing;
+     the page body itself never scrolls sideways. */
+  .card { overflow-x: auto; }
+  table { min-width: 560px; }
+  th, td { padding: 8px 8px; }
+
+  .row { gap: 8px; }
+  .row button, .row input, .row select { flex: 1 1 auto; }
+  .login-card { width: 100%; max-width: 360px; }
+}
+
+/* Larger touch targets on touch devices */
+@media (pointer: coarse) {
+  button, .sidebar nav a { min-height: 40px; }
+}
