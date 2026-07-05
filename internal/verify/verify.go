@@ -63,20 +63,36 @@ func New(provider, apiKey string) (Verifier, error) {
 }
 
 func getJSON(ctx context.Context, c *http.Client, req *http.Request, out any) (string, error) {
-	resp, err := c.Do(req.WithContext(ctx))
-	if err != nil {
-		return "", err
+	var lastRaw string
+	// Retry rate-limits (429) and transient 5xx with backoff so a burst doesn't
+	// leave leads unverified.
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return lastRaw, ctx.Err()
+			case <-time.After(time.Duration(1<<uint(attempt-1)) * time.Second): // 1s, 2s, 4s
+			}
+		}
+		resp, err := c.Do(req.WithContext(ctx))
+		if err != nil {
+			return lastRaw, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		lastRaw = string(body)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			continue // retry
+		}
+		if resp.StatusCode >= 400 {
+			return lastRaw, fmt.Errorf("verifier http %d", resp.StatusCode)
+		}
+		if err := json.Unmarshal(body, out); err != nil {
+			return lastRaw, err
+		}
+		return lastRaw, nil
 	}
-	defer resp.Body.Close()
-	var buf strings.Builder
-	dec := json.NewDecoder(io.TeeReader(resp.Body, &buf))
-	if resp.StatusCode >= 400 {
-		return buf.String(), fmt.Errorf("verifier http %d", resp.StatusCode)
-	}
-	if err := dec.Decode(out); err != nil {
-		return buf.String(), err
-	}
-	return buf.String(), nil
+	return lastRaw, fmt.Errorf("verifier rate-limited (429) after retries")
 }
 
 // --- MillionVerifier: GET /api/v3/?api=KEY&email=E -> {"result":"ok|catch_all|unknown|invalid|disposable"} ---
