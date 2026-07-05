@@ -88,8 +88,8 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 		return s.st.AdvanceCampaignLead(ctx, cl.ID, cl.CurrentStep, next, "active")
 	}
 
-	// Skip blacklisted (domain) or known-invalid (failed verification) leads at
-	// send time — re-checked here in case the status changed after enrollment.
+	// Skip blacklisted / invalid leads, and (when enabled) hold not-yet-verified
+	// leads so we never email an address until it's been verified.
 	if lead, err := s.st.GetLead(ctx, cl.LeadID); err == nil {
 		if bl, err := s.st.BlacklistedDomains(ctx, campaign.UserID); err == nil && store.IsBlacklisted(bl, lead.Email) {
 			s.log.Printf("sender: skipping blacklisted lead %s (campaign %d)", lead.Email, cl.CampaignID)
@@ -98,6 +98,12 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 		if lead.Verification == "invalid" {
 			s.log.Printf("sender: skipping invalid (unverifiable) lead %s (campaign %d)", lead.Email, cl.CampaignID)
 			return s.st.SetCampaignLeadStatus(ctx, cl.ID, "skipped")
+		}
+		if lead.Verification == "unknown" && s.requireVerified(ctx, campaign.UserID) {
+			// Not verified yet — keep the lead active and re-check later instead of
+			// sending. It'll send once verified valid (or skip once invalid).
+			s.log.Printf("sender: holding unverified lead %s (campaign %d) until it's verified", lead.Email, cl.CampaignID)
+			return s.st.AdvanceCampaignLead(ctx, cl.ID, cl.CurrentStep, now.Add(30*time.Minute), "active")
 		}
 	}
 
@@ -267,6 +273,16 @@ func (s *Service) advance(ctx context.Context, cl store.CampaignLead, step store
 }
 
 // emailDomain returns the lowercased domain part of an email ("" if malformed).
+// requireVerified reports whether campaigns should only email verified addresses
+// (holding not-yet-verified leads). Defaults to on when the setting is unset.
+func (s *Service) requireVerified(ctx context.Context, userID int64) bool {
+	v, ok, _ := s.st.GetSetting(ctx, userID, "require_verified_send")
+	if !ok {
+		return true
+	}
+	return v != "0" && strings.ToLower(v) != "false"
+}
+
 func emailDomain(email string) string {
 	at := strings.LastIndex(email, "@")
 	if at < 0 || at == len(email)-1 {

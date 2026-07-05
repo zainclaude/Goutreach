@@ -109,6 +109,20 @@ export default function Settings() {
           />
           <button onClick={() => save("email_verify_api_key", true)}>Save key</button>
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
+          <input
+            type="checkbox"
+            style={{ width: "auto" }}
+            checked={(vals["require_verified_send"] ?? "1") !== "0"}
+            onChange={async (e) => {
+              const val = e.target.checked ? "1" : "0";
+              setVals({ ...vals, require_verified_send: val });
+              await api.put("/settings", { key: "require_verified_send", value: val, is_secret: false });
+              setMsg("Saved");
+            }}
+          />
+          Only email verified leads — hold any lead until it's been verified (unverified leads wait; invalid ones are skipped)
+        </label>
         {msg && <p className="ok">{msg}</p>}
       </div>
     </div>
