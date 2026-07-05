@@ -7,10 +7,12 @@ package verify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +29,17 @@ const (
 // Verifier checks a single email address.
 type Verifier interface {
 	Verify(ctx context.Context, email string) (status string, raw string, err error)
+	// Preflight validates the key/quota before a batch run so problems (e.g. out
+	// of credits) surface to the user immediately. Returns nil if good to go.
+	Preflight(ctx context.Context) error
+}
+
+// ErrOutOfCredits indicates the provider account has no verification credits.
+var ErrOutOfCredits = errors.New("out of email-verification credits")
+
+// IsOutOfCredits reports whether an error is (or wraps) an out-of-credits error.
+func IsOutOfCredits(err error) bool {
+	return errors.Is(err, ErrOutOfCredits)
 }
 
 // New builds a Verifier for the named provider with the given API key.
@@ -73,6 +86,8 @@ type millionVerifier struct {
 	http *http.Client
 }
 
+func (m *millionVerifier) Preflight(ctx context.Context) error { return nil }
+
 func (m *millionVerifier) Verify(ctx context.Context, email string) (string, string, error) {
 	u := "https://api.millionverifier.com/api/v3/?api=" + url.QueryEscape(m.key) + "&email=" + url.QueryEscape(email)
 	req, _ := http.NewRequest(http.MethodGet, u, nil)
@@ -102,15 +117,46 @@ type zeroBounce struct {
 	http *http.Client
 }
 
+// Preflight checks the ZeroBounce credit balance so an out-of-credits or bad-key
+// situation is reported before the batch starts.
+func (z *zeroBounce) Preflight(ctx context.Context) error {
+	u := "https://api.zerobounce.net/v2/getcredits?api_key=" + url.QueryEscape(z.key)
+	req, _ := http.NewRequest(http.MethodGet, u, nil)
+	var r struct {
+		Credits string `json:"Credits"`
+	}
+	if _, err := getJSON(ctx, z.http, req, &r); err != nil {
+		return fmt.Errorf("could not reach ZeroBounce: %w", err)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(r.Credits))
+	if err != nil {
+		return nil // unexpected shape — don't block the run on a parse hiccup
+	}
+	if n < 0 {
+		return fmt.Errorf("invalid ZeroBounce API key")
+	}
+	if n == 0 {
+		return fmt.Errorf("you're out of ZeroBounce credits — top up at zerobounce.net to verify leads: %w", ErrOutOfCredits)
+	}
+	return nil
+}
+
 func (z *zeroBounce) Verify(ctx context.Context, email string) (string, string, error) {
 	u := "https://api.zerobounce.net/v2/validate?api_key=" + url.QueryEscape(z.key) + "&email=" + url.QueryEscape(email)
 	req, _ := http.NewRequest(http.MethodGet, u, nil)
 	var r struct {
 		Status string `json:"status"`
+		Error  string `json:"error"`
 	}
 	raw, err := getJSON(ctx, z.http, req, &r)
 	if err != nil {
 		return StatusUnknown, raw, err
+	}
+	if r.Error != "" {
+		if strings.Contains(strings.ToLower(r.Error), "credit") {
+			return StatusUnknown, raw, fmt.Errorf("%s: %w", r.Error, ErrOutOfCredits)
+		}
+		return StatusUnknown, raw, fmt.Errorf("ZeroBounce: %s", r.Error)
 	}
 	switch strings.ToLower(r.Status) {
 	case "valid":
@@ -132,6 +178,8 @@ type neverBounce struct {
 	key  string
 	http *http.Client
 }
+
+func (n *neverBounce) Preflight(ctx context.Context) error { return nil }
 
 func (n *neverBounce) Verify(ctx context.Context, email string) (string, string, error) {
 	u := "https://api.neverbounce.com/v4/single/check?key=" + url.QueryEscape(n.key) + "&email=" + url.QueryEscape(email)
@@ -161,6 +209,8 @@ type bouncer struct {
 	key  string
 	http *http.Client
 }
+
+func (b *bouncer) Preflight(ctx context.Context) error { return nil }
 
 func (b *bouncer) Verify(ctx context.Context, email string) (string, string, error) {
 	u := "https://api.usebouncer.com/v1.1/email/verify?email=" + url.QueryEscape(email)

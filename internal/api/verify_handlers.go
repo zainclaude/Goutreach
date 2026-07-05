@@ -40,6 +40,12 @@ func (s *Server) handleVerifyLeads(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Pre-flight (e.g. credit balance) so problems surface immediately in the UI.
+	if err := v.Preflight(r.Context()); err != nil {
+		s.log.Printf("verify: preflight failed — %v", err)
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	leads, err := s.st.ListUnverifiedLeads(r.Context(), userID, 10000)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
@@ -73,6 +79,10 @@ func (s *Server) runVerification(v verify.Verifier, leads []store.Lead) {
 	for _, l := range leads {
 		status, _, err := v.Verify(ctx, l.Email)
 		if err != nil {
+			if verify.IsOutOfCredits(err) {
+				s.log.Printf("verify: stopping — out of credits after %d lead(s)", counts[verify.StatusValid]+counts[verify.StatusInvalid]+counts[verify.StatusRisky]+counts[verify.StatusCatchAll]+counts[verify.StatusUnknown])
+				break
+			}
 			errs++
 			if errs <= 3 { // avoid log spam if the key/plan is bad for every lead
 				s.log.Printf("verify: lead %d (%s): %v", l.ID, l.Email, err)
