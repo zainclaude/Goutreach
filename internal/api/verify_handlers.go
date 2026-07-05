@@ -36,6 +36,7 @@ func (s *Server) handleVerifyLeads(w http.ResponseWriter, r *http.Request) {
 	userID := s.userID(r)
 	v, err := s.buildVerifier(r.Context(), userID)
 	if err != nil {
+		s.log.Printf("verify: cannot start — %v", err)
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -44,6 +45,7 @@ func (s *Server) handleVerifyLeads(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.log.Printf("verify: starting — %d unverified lead(s) queued", len(leads))
 	go s.runVerification(v, leads)
 	writeJSON(w, http.StatusOK, map[string]int{"queued": len(leads)})
 }
@@ -66,23 +68,25 @@ func (s *Server) verifyUnverifiedAsync(userID int64) {
 // limits) and records the result. Runs detached from the request.
 func (s *Server) runVerification(v verify.Verifier, leads []store.Lead) {
 	ctx := context.Background()
-	ok, bad := 0, 0
+	counts := map[string]int{}
+	errs := 0
 	for _, l := range leads {
 		status, _, err := v.Verify(ctx, l.Email)
 		if err != nil {
-			s.log.Printf("verify: lead %d (%s): %v", l.ID, l.Email, err)
+			errs++
+			if errs <= 3 { // avoid log spam if the key/plan is bad for every lead
+				s.log.Printf("verify: lead %d (%s): %v", l.ID, l.Email, err)
+			}
 			continue
 		}
 		if err := s.st.SetLeadVerification(ctx, l.ID, status); err != nil {
 			s.log.Printf("verify: save lead %d: %v", l.ID, err)
 			continue
 		}
-		if status == verify.StatusInvalid {
-			bad++
-		} else {
-			ok++
-		}
+		counts[status]++
 		time.Sleep(200 * time.Millisecond)
 	}
-	s.log.Printf("verify: finished %d leads (%d invalid)", ok+bad, bad)
+	s.log.Printf("verify: finished — valid=%d invalid=%d risky=%d catch_all=%d unknown=%d errors=%d",
+		counts[verify.StatusValid], counts[verify.StatusInvalid], counts[verify.StatusRisky],
+		counts[verify.StatusCatchAll], counts[verify.StatusUnknown], errs)
 }
