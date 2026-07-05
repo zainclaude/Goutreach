@@ -55,9 +55,11 @@ func main() {
 	authSvc := auth.New(cfg.JWTSecret)
 
 	tiktok := research.New(st, cipher, logger)
-	gen := ai.New(cfg.AnthropicKey, tiktok, logger)
+	gen := ai.New(cfg.AnthropicKey, cfg.AIModel, tiktok, logger)
 	if !gen.Enabled() {
 		logger.Println("warning: ANTHROPIC_API_KEY not set — AI generation disabled")
+	} else {
+		logger.Printf("ai: generating emails with %s", cfg.AIModel)
 	}
 
 	google := googleoauth.New(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL)

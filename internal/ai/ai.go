@@ -22,14 +22,18 @@ import (
 type Generator struct {
 	client  anthropic.Client
 	enabled bool
+	model   anthropic.Model
 	tiktok  TikTokShopChecker
 	log     *log.Logger
 }
 
 // New builds a Generator. If apiKey is empty the generator is disabled and
 // Generate returns a clear error (so the rest of the app still runs).
-func New(apiKey string, tiktok TikTokShopChecker, logger *log.Logger) *Generator {
-	g := &Generator{tiktok: tiktok, log: logger}
+func New(apiKey, model string, tiktok TikTokShopChecker, logger *log.Logger) *Generator {
+	if model == "" {
+		model = "claude-sonnet-5"
+	}
+	g := &Generator{model: anthropic.Model(model), tiktok: tiktok, log: logger}
 	if g.log == nil {
 		g.log = log.New(io.Discard, "", 0)
 	}
@@ -142,8 +146,8 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 	}
 
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.ModelClaudeOpus4_8,
-		MaxTokens: 8000,
+		Model:     g.model,
+		MaxTokens: 12000,
 		System: []anthropic.TextBlockParam{{
 			Text: g.systemPrompt(in, brand, brandIsDomain),
 		}},

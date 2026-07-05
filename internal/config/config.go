@@ -8,6 +8,7 @@ type Config struct {
 	HTTPAddr      string // e.g. ":8080"
 	AppURL        string // public base URL for tracking links, e.g. https://send.example.com
 	AnthropicKey  string // ANTHROPIC_API_KEY
+	AIModel       string // AI_MODEL — Claude model for email generation (default claude-sonnet-5)
 	EncryptionKey string // 32-byte key (hex or raw) for AES-256-GCM at-rest encryption
 	JWTSecret     string // signing secret for dashboard sessions
 
@@ -25,6 +26,7 @@ func Load() (Config, error) {
 		HTTPAddr:      httpAddr(),
 		AppURL:        appURL(),
 		AnthropicKey:  os.Getenv("ANTHROPIC_API_KEY"),
+		AIModel:       env("AI_MODEL", "claude-sonnet-5"),
 		EncryptionKey: os.Getenv("ENCRYPTION_KEY"),
 		JWTSecret:     env("JWT_SECRET", "dev-insecure-jwt-secret-change-me"),
 
