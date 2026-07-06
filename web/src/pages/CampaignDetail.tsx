@@ -123,9 +123,9 @@ export default function CampaignDetail() {
               {sendStatus.counts.next_send_at ? `, next send ${new Date(sendStatus.counts.next_send_at).toLocaleString()}` : ""}.
             </p>
           ) : (
-            sendStatus.blockers.map((b, i) => <p key={i} className="err" style={{ margin: "4px 0" }}>⏸ {b}</p>)
+            (sendStatus.blockers ?? []).map((b, i) => <p key={i} className="err" style={{ margin: "4px 0" }}>⏸ {b}</p>)
           )}
-          {sendStatus.notes.map((n, i) => <p key={i} className="muted" style={{ margin: "4px 0" }}>{n}</p>)}
+          {(sendStatus.notes ?? []).map((n, i) => <p key={i} className="muted" style={{ margin: "4px 0" }}>{n}</p>)}
         </div>
       )}
 

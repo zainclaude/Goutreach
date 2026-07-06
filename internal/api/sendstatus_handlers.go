@@ -20,7 +20,7 @@ func (s *Server) handleCampaignSendStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	now := time.Now()
-	var blockers, notes []string
+	blockers, notes := []string{}, []string{} // non-nil so JSON is [], never null
 
 	counts, err := s.st.CampaignLeadStates(r.Context(), c.ID)
 	if err != nil {
