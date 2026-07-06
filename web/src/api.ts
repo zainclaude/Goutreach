@@ -104,6 +104,12 @@ export interface Message {
   status: string; template_used: string; research_notes: string; error: string;
   approved: boolean; lead_email: string; lead_company: string;
 }
+export interface SendStatus {
+  sending: boolean; blockers: string[]; notes: string[];
+  counts: { total: number; active: number; due_now: number; unverified: number;
+    bad_email: number; skipped: number; finished: number; replied: number;
+    bounced: number; next_send_at: string | null };
+}
 export interface Stats {
   sent: number; opens: number; clicks: number; replies: number; bounces: number;
 }

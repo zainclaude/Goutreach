@@ -49,3 +49,10 @@ func nextWindowOpen(c store.Campaign, now time.Time) time.Time {
 	}
 	return now.Add(1 * time.Hour)
 }
+
+// InSendWindow reports whether now falls inside the campaign's send window
+// (exported for the send-status diagnosis endpoint).
+func InSendWindow(c store.Campaign, now time.Time) bool { return inSendWindow(c, now) }
+
+// NextWindowOpen returns when the campaign's send window next opens.
+func NextWindowOpen(c store.Campaign, now time.Time) time.Time { return nextWindowOpen(c, now) }

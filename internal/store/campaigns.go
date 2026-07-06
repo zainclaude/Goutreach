@@ -408,3 +408,39 @@ func (s *Store) GetCampaignLead(ctx context.Context, id int64) (CampaignLead, er
 	).Scan(&cl.ID, &cl.CampaignID, &cl.LeadID, &cl.CurrentStep, &cl.Status, &cl.NextSendAt, &cl.CreatedAt)
 	return cl, err
 }
+
+// CampaignLeadStateCounts summarizes enrollment state for the send-status
+// diagnosis: how many leads are active, due now, held unverified, invalid/risky
+// (will be skipped), and terminal.
+type CampaignLeadStateCounts struct {
+	Total      int        `json:"total"`
+	Active     int        `json:"active"`
+	DueNow     int        `json:"due_now"`
+	Unverified int        `json:"unverified"` // active + never verified
+	BadEmail   int        `json:"bad_email"`  // active + invalid/risky
+	Skipped    int        `json:"skipped"`
+	Finished   int        `json:"finished"`
+	Replied    int        `json:"replied"`
+	Bounced    int        `json:"bounced"`
+	NextSendAt *time.Time `json:"next_send_at"`
+}
+
+func (s *Store) CampaignLeadStates(ctx context.Context, campaignID int64) (CampaignLeadStateCounts, error) {
+	var c CampaignLeadStateCounts
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*),
+		  count(*) FILTER (WHERE cl.status='active'),
+		  count(*) FILTER (WHERE cl.status='active' AND cl.next_send_at <= now()),
+		  count(*) FILTER (WHERE cl.status='active' AND l.verification_status='unknown' AND l.verified_at IS NULL),
+		  count(*) FILTER (WHERE cl.status='active' AND l.verification_status IN ('invalid','risky')),
+		  count(*) FILTER (WHERE cl.status='skipped'),
+		  count(*) FILTER (WHERE cl.status='finished'),
+		  count(*) FILTER (WHERE cl.status='replied'),
+		  count(*) FILTER (WHERE cl.status='bounced'),
+		  min(cl.next_send_at) FILTER (WHERE cl.status='active')
+		FROM campaign_leads cl JOIN leads l ON l.id = cl.lead_id
+		WHERE cl.campaign_id=$1`, campaignID).Scan(
+		&c.Total, &c.Active, &c.DueNow, &c.Unverified, &c.BadEmail,
+		&c.Skipped, &c.Finished, &c.Replied, &c.Bounced, &c.NextSendAt)
+	return c, err
+}

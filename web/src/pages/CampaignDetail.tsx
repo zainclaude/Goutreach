@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, Account, Campaign, CampaignLeadDetail, Lead, Message, Stats, Step } from "../api";
+import { api, Account, Campaign, CampaignLeadDetail, Lead, Message, SendStatus, Stats, Step } from "../api";
 
 export default function CampaignDetail() {
   const { id } = useParams();
@@ -11,6 +11,7 @@ export default function CampaignDetail() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [sendStatus, setSendStatus] = useState<SendStatus | null>(null);
   const [msg, setMsg] = useState("");
   const [leads, setLeads] = useState<Lead[]>([]);
   const [enrolled, setEnrolled] = useState<CampaignLeadDetail[]>([]);
@@ -23,15 +24,17 @@ export default function CampaignDetail() {
     });
   const loadMessages = () => api.get<Message[]>(`/campaigns/${cid}/messages`).then((m) => setMessages(m || []));
   const loadStats = () => api.get<Stats>(`/campaigns/${cid}/stats`).then(setStats);
+  const loadSendStatus = () => api.get<SendStatus>(`/campaigns/${cid}/send-status`).then(setSendStatus).catch(() => {});
 
   const loadLeads = () => api.get<Lead[]>("/leads").then((l) => setLeads(l || []));
   const loadEnrolled = () => api.get<CampaignLeadDetail[]>(`/campaigns/${cid}/leads`).then((l) => setEnrolled(l || []));
 
   useEffect(() => {
-    loadCampaign(); loadMessages(); loadStats(); loadLeads(); loadEnrolled();
+    loadCampaign(); loadMessages(); loadStats(); loadLeads(); loadEnrolled(); loadSendStatus();
+    const ss = setInterval(loadSendStatus, 30000);
     api.get<Account[]>("/accounts").then((a) => setAccounts(a || []));
     const t = setInterval(loadMessages, 5000); // poll while previews generate
-    return () => clearInterval(t);
+    return () => { clearInterval(t); clearInterval(ss); };
   }, [cid]);
 
   const toggleAccount = async (aid: number) => {
@@ -84,9 +87,9 @@ export default function CampaignDetail() {
       prompt = `⚠️ Before launching:\n\n${warnings.join("\n\n")}\n\nLaunch anyway?`;
     }
     if (!confirm(prompt)) return;
-    await api.post(`/campaigns/${cid}/launch`); setMsg("Launched 🚀"); loadCampaign();
+    await api.post(`/campaigns/${cid}/launch`); setMsg("Launched 🚀"); loadCampaign(); loadSendStatus();
   };
-  const setStatus = async (status: string) => { await api.patch(`/campaigns/${cid}`, { status }); loadCampaign(); };
+  const setStatus = async (status: string) => { await api.patch(`/campaigns/${cid}`, { status }); loadCampaign(); loadSendStatus(); };
   const approve = async (mid: number) => { await api.post(`/messages/${mid}/approve`); loadMessages(); };
   const reject = async (mid: number) => { await api.del(`/messages/${mid}`); loadMessages(); };
   const saveEdit = async (m: Message) => { await api.patch(`/messages/${m.id}`, { subject: m.subject, body: m.body }); setMsg("Saved edit"); };
@@ -110,6 +113,21 @@ export default function CampaignDetail() {
         <div className="kpi"><div className="v">{stats?.replies ?? 0}</div><div className="l">Replies</div></div>
         <div className="kpi"><div className="v">{stats?.bounces ?? 0}</div><div className="l">Bounces</div></div>
       </div>
+
+      {sendStatus && (
+        <div className="card">
+          <h3>Sending status</h3>
+          {sendStatus.sending ? (
+            <p className="ok">
+              ✅ Sending is unblocked — {sendStatus.counts.due_now} lead(s) due now
+              {sendStatus.counts.next_send_at ? `, next send ${new Date(sendStatus.counts.next_send_at).toLocaleString()}` : ""}.
+            </p>
+          ) : (
+            sendStatus.blockers.map((b, i) => <p key={i} className="err" style={{ margin: "4px 0" }}>⏸ {b}</p>)
+          )}
+          {sendStatus.notes.map((n, i) => <p key={i} className="muted" style={{ margin: "4px 0" }}>{n}</p>)}
+        </div>
+      )}
 
       <div className="card">
         <h3>Brief</h3>
