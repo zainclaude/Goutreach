@@ -95,8 +95,8 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 			s.log.Printf("sender: skipping blacklisted lead %s (campaign %d)", lead.Email, cl.CampaignID)
 			return s.st.SetCampaignLeadStatus(ctx, cl.ID, "skipped")
 		}
-		if lead.Verification == "invalid" {
-			s.log.Printf("sender: skipping invalid (unverifiable) lead %s (campaign %d)", lead.Email, cl.CampaignID)
+		if lead.Verification == "invalid" || lead.Verification == "risky" {
+			s.log.Printf("sender: skipping %s lead %s (campaign %d)", lead.Verification, lead.Email, cl.CampaignID)
 			return s.st.SetCampaignLeadStatus(ctx, cl.ID, "skipped")
 		}
 		if lead.Verification == "unknown" && s.requireVerified(ctx, campaign.UserID) {

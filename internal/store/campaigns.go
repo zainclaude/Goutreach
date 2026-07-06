@@ -236,9 +236,13 @@ func (s *Store) ListCampaignAccountIDs(ctx context.Context, campaignID int64) ([
 func (s *Store) EnrollLeads(ctx context.Context, campaignID int64, leadIDs []int64) (int, error) {
 	added := 0
 	for _, lid := range leadIDs {
+		// The join refuses leads whose email verification came back invalid or
+		// risky — they can't be enrolled through any path (picker or bulk).
 		ct, err := s.pool.Exec(ctx,
 			`INSERT INTO campaign_leads (campaign_id, lead_id, next_send_at)
-			 VALUES ($1,$2, now()) ON CONFLICT DO NOTHING`, campaignID, lid)
+			 SELECT $1, l.id, now() FROM leads l
+			 WHERE l.id = $2 AND l.verification_status NOT IN ('invalid','risky')
+			 ON CONFLICT DO NOTHING`, campaignID, lid)
 		if err != nil {
 			return added, err
 		}

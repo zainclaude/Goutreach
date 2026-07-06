@@ -153,15 +153,18 @@ export default function CampaignDetail() {
         })()}
         {showPicker && (() => {
           const enrolledIds = new Set(enrolled.map((e) => e.lead_id));
+          const pickable = leads.filter((l) => l.verification_status !== "invalid" && l.verification_status !== "risky");
+          const hidden = leads.length - pickable.length;
           return (
           <div style={{ marginTop: 12, maxHeight: 300, overflow: "auto", border: "1px solid #2a2a2a", borderRadius: 6, padding: 10 }}>
             <div className="row" style={{ marginBottom: 8 }}>
-              <button className="secondary" onClick={() => setSelected(leads.filter((l) => !enrolledIds.has(l.id)).map((l) => l.id))}>Select all unenrolled</button>
+              <button className="secondary" onClick={() => setSelected(pickable.filter((l) => !enrolledIds.has(l.id)).map((l) => l.id))}>Select all unenrolled</button>
               <button className="secondary" onClick={() => setSelected([])}>Clear</button>
               <button onClick={enrollSelected} disabled={selected.length === 0}>Enroll selected ({selected.length})</button>
             </div>
-            {leads.length === 0 && <p className="muted">No leads yet — import leads first.</p>}
-            {leads.map((l) => {
+            {hidden > 0 && <p className="muted" style={{ margin: "0 0 8px" }}>{hidden} lead(s) hidden — verification marked them invalid or risky.</p>}
+            {pickable.length === 0 && <p className="muted">No selectable leads — import leads first.</p>}
+            {pickable.map((l) => {
               const isEnrolled = enrolledIds.has(l.id);
               return (
               <label key={l.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "2px 0", opacity: isEnrolled ? 0.6 : 1 }}>
