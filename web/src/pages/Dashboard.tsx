@@ -2,17 +2,21 @@ import { useEffect, useState } from "react";
 import { api, Stats, Campaign } from "../api";
 
 const RANGES = [
-  { value: "all", label: "All time" },
   { value: "today", label: "Today" },
-  { value: "3d", label: "Last 3 days" },
   { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "all", label: "All time" },
 ];
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [aiEnabled, setAiEnabled] = useState(true);
-  const [range, setRange] = useState(() => localStorage.getItem("dash_range") || "all");
+  const [range, setRange] = useState(() => {
+    const stored = localStorage.getItem("dash_range");
+    if (stored === "3d") return "30d"; // option replaced
+    return RANGES.some((r) => r.value === stored) ? (stored as string) : "today";
+  });
 
   useEffect(() => {
     api.get<Stats>(`/overview?range=${range}`).then(setStats).catch(() => {});

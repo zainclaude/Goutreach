@@ -82,15 +82,15 @@ var easternTZ = func() *time.Location {
 }()
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
-	// ?range=today|3d|7d|all restricts the stats window (default all time).
+	// ?range=today|7d|30d|all restricts the stats window (default all time).
 	var since *time.Time
 	now := time.Now().In(easternTZ)
 	switch r.URL.Query().Get("range") {
 	case "today":
 		t := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, easternTZ)
 		since = &t
-	case "3d":
-		t := now.Add(-3 * 24 * time.Hour)
+	case "30d":
+		t := now.Add(-30 * 24 * time.Hour)
 		since = &t
 	case "7d":
 		t := now.Add(-7 * 24 * time.Hour)
