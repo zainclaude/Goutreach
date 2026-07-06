@@ -199,7 +199,7 @@ export default function CampaignDetail() {
                   <td>{e.company || <span className="muted">—</span>}</td>
                   <td>
                     <span className={`badge ${e.status}`}>{e.status}</span>
-                    {e.status === "active" && e.verification_status === "unknown" && (
+                    {e.status === "active" && e.verification_status === "unknown" && !e.verified_at && (
                       <div className="muted" style={{ fontSize: 11, marginTop: 2 }}
                         title="'Only email verified leads' is on, so this lead is held until it's verified. Run Verify emails on the Leads page.">
                         ⏸ awaiting verification — won't send yet

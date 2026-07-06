@@ -99,9 +99,12 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 			s.log.Printf("sender: skipping %s lead %s (campaign %d)", lead.Verification, lead.Email, cl.CampaignID)
 			return s.st.SetCampaignLeadStatus(ctx, cl.ID, "skipped")
 		}
-		if lead.Verification == "unknown" && s.requireVerified(ctx, campaign.UserID) {
-			// Not verified yet — keep the lead active and re-check later instead of
+		if lead.Verification == "unknown" && lead.VerifiedAt == nil && s.requireVerified(ctx, campaign.UserID) {
+			// Never verified — keep the lead active and re-check later instead of
 			// sending. It'll send once verified valid (or skip once invalid).
+			// A lead that WAS checked but came back inconclusive (unknown with
+			// verified_at set) is allowed through, like catch_all — otherwise it
+			// would be held forever with no way to resolve it.
 			s.log.Printf("sender: holding unverified lead %s (campaign %d) until it's verified", lead.Email, cl.CampaignID)
 			return s.st.AdvanceCampaignLead(ctx, cl.ID, cl.CurrentStep, now.Add(30*time.Minute), "active")
 		}
