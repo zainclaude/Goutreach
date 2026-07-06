@@ -197,7 +197,15 @@ export default function CampaignDetail() {
                     {(e.first_name || e.last_name) && <div className="muted">{[e.first_name, e.last_name].filter(Boolean).join(" ")}</div>}
                   </td>
                   <td>{e.company || <span className="muted">—</span>}</td>
-                  <td><span className={`badge ${e.status}`}>{e.status}</span></td>
+                  <td>
+                    <span className={`badge ${e.status}`}>{e.status}</span>
+                    {e.status === "active" && e.verification_status === "unknown" && (
+                      <div className="muted" style={{ fontSize: 11, marginTop: 2 }}
+                        title="'Only email verified leads' is on, so this lead is held until it's verified. Run Verify emails on the Leads page.">
+                        ⏸ awaiting verification — won't send yet
+                      </div>
+                    )}
+                  </td>
                   <td>{e.current_step + 1}</td>
                   <td><button className="danger" title="Remove this lead from the campaign" onClick={() => removeLead(e.lead_id, e.email)}>×</button></td>
                 </tr>

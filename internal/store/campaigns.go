@@ -253,14 +253,15 @@ func (s *Store) EnrollLeads(ctx context.Context, campaignID int64, leadIDs []int
 
 // CampaignLeadDetail is an enrolled lead with its enrollment state, for display.
 type CampaignLeadDetail struct {
-	LeadID      int64  `json:"lead_id"`
-	Email       string `json:"email"`
-	FirstName   string `json:"first_name"`
-	LastName    string `json:"last_name"`
-	Company     string `json:"company"`
-	Status      string `json:"status"`
-	CurrentStep int    `json:"current_step"`
-	Contacted   bool   `json:"contacted"` // emailed before (in any campaign)
+	LeadID       int64  `json:"lead_id"`
+	Email        string `json:"email"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Company      string `json:"company"`
+	Status       string `json:"status"`
+	CurrentStep  int    `json:"current_step"`
+	Contacted    bool   `json:"contacted"`           // emailed before (in any campaign)
+	Verification string `json:"verification_status"` // unknown|valid|invalid|risky|catch_all
 }
 
 // ListCampaignLeadDetails returns the leads enrolled in a campaign with their
@@ -269,7 +270,8 @@ func (s *Store) ListCampaignLeadDetails(ctx context.Context, campaignID int64) (
 	rows, err := s.pool.Query(ctx, `
 		SELECT l.id, l.email, l.first_name, l.last_name, l.company, cl.status, cl.current_step,
 		       EXISTS(SELECT 1 FROM campaign_leads cl2 JOIN messages m ON m.campaign_lead_id=cl2.id
-		              WHERE cl2.lead_id = l.id AND m.status IN ('sent','replied','bounced')) AS contacted
+		              WHERE cl2.lead_id = l.id AND m.status IN ('sent','replied','bounced')) AS contacted,
+		       l.verification_status
 		FROM campaign_leads cl JOIN leads l ON l.id = cl.lead_id
 		WHERE cl.campaign_id=$1
 		ORDER BY l.id DESC`, campaignID)
@@ -280,7 +282,7 @@ func (s *Store) ListCampaignLeadDetails(ctx context.Context, campaignID int64) (
 	var out []CampaignLeadDetail
 	for rows.Next() {
 		var d CampaignLeadDetail
-		if err := rows.Scan(&d.LeadID, &d.Email, &d.FirstName, &d.LastName, &d.Company, &d.Status, &d.CurrentStep, &d.Contacted); err != nil {
+		if err := rows.Scan(&d.LeadID, &d.Email, &d.FirstName, &d.LastName, &d.Company, &d.Status, &d.CurrentStep, &d.Contacted, &d.Verification); err != nil {
 			return nil, err
 		}
 		out = append(out, d)

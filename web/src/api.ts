@@ -96,6 +96,7 @@ export interface Campaign {
 export interface CampaignLeadDetail {
   lead_id: number; email: string; first_name: string; last_name: string;
   company: string; status: string; current_step: number; contacted: boolean;
+  verification_status: string;
 }
 export interface Step { step_index: number; delay_days: number; angle: string; }
 export interface Message {
