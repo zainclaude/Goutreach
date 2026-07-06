@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/zainclaude/goutreach/internal/auth"
 )
@@ -71,7 +72,21 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
-	stats, err := s.st.OverviewStats(r.Context(), s.userID(r))
+	// ?range=today|3d|7d|all restricts the stats window (default all time).
+	var since *time.Time
+	now := time.Now().UTC()
+	switch r.URL.Query().Get("range") {
+	case "today":
+		t := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		since = &t
+	case "3d":
+		t := now.Add(-3 * 24 * time.Hour)
+		since = &t
+	case "7d":
+		t := now.Add(-7 * 24 * time.Hour)
+		since = &t
+	}
+	stats, err := s.st.OverviewStats(r.Context(), s.userID(r), since)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return

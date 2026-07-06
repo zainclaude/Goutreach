@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // CreateEvent records an engagement event (open/click/reply/bounce).
@@ -83,15 +84,17 @@ func (s *Store) CampaignStatsFor(ctx context.Context, campaignID int64) (Campaig
 	return cs, rows.Err()
 }
 
-// OverviewStats aggregates totals across all of a user's campaigns.
-func (s *Store) OverviewStats(ctx context.Context, userID int64) (CampaignStats, error) {
+// OverviewStats aggregates totals across all of a user's campaigns. A non-nil
+// since restricts to messages sent (and events recorded) at/after that time.
+func (s *Store) OverviewStats(ctx context.Context, userID int64, since *time.Time) (CampaignStats, error) {
 	cs := CampaignStats{}
 	err := s.pool.QueryRow(ctx,
 		`SELECT count(*) FROM messages m
 		 JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
 		 JOIN campaigns c ON c.id = cl.campaign_id
-		 WHERE c.user_id=$1 AND m.status IN ('sent','replied','bounced')`,
-		userID).Scan(&cs.Sent)
+		 WHERE c.user_id=$1 AND m.status IN ('sent','replied','bounced')
+		   AND ($2::timestamptz IS NULL OR m.sent_at >= $2)`,
+		userID, since).Scan(&cs.Sent)
 	if err != nil {
 		return cs, err
 	}
@@ -102,7 +105,8 @@ func (s *Store) OverviewStats(ctx context.Context, userID int64) (CampaignStats,
 		 JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
 		 JOIN campaigns c ON c.id = cl.campaign_id
 		 WHERE c.user_id=$1
-		 GROUP BY e.type`, userID)
+		   AND ($2::timestamptz IS NULL OR e.created_at >= $2)
+		 GROUP BY e.type`, userID, since)
 	if err != nil {
 		return cs, err
 	}

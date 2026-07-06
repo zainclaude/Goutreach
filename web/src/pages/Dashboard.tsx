@@ -1,13 +1,25 @@
 import { useEffect, useState } from "react";
 import { api, Stats, Campaign } from "../api";
 
+const RANGES = [
+  { value: "all", label: "All time" },
+  { value: "today", label: "Today" },
+  { value: "3d", label: "Last 3 days" },
+  { value: "7d", label: "Last 7 days" },
+];
+
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [range, setRange] = useState(() => localStorage.getItem("dash_range") || "all");
 
   useEffect(() => {
-    api.get<Stats>("/overview").then(setStats).catch(() => {});
+    api.get<Stats>(`/overview?range=${range}`).then(setStats).catch(() => {});
+    localStorage.setItem("dash_range", range);
+  }, [range]);
+
+  useEffect(() => {
     api.get<Campaign[]>("/campaigns").then((c) => setCampaigns(c || [])).catch(() => {});
     api.get<{ ai_enabled: boolean }>("/me").then((m) => setAiEnabled(m.ai_enabled)).catch(() => {});
   }, []);
@@ -16,7 +28,12 @@ export default function Dashboard() {
 
   return (
     <div>
-      <h2>Dashboard</h2>
+      <div className="flex-between">
+        <h2>Dashboard</h2>
+        <select style={{ width: "auto" }} value={range} onChange={(e) => setRange(e.target.value)}>
+          {RANGES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+      </div>
       {!aiEnabled && (
         <div className="card" style={{ borderColor: "var(--danger)" }}>
           <b>AI generation is disabled.</b> Set <code>ANTHROPIC_API_KEY</code> on the server to enable
@@ -24,7 +41,7 @@ export default function Dashboard() {
         </div>
       )}
       <div className="kpis">
-        <div className="kpi"><div className="v">{stats?.sent ?? 0}</div><div className="l">Emails sent</div></div>
+        <div className="kpi"><div className="v">{stats?.sent ?? 0}</div><div className="l">Emails sent · {RANGES.find((r) => r.value === range)?.label}</div></div>
         <div className="kpi"><div className="v">{stats?.opens ?? 0}</div><div className="l">Opens ({rate(stats?.opens ?? 0)})</div></div>
         <div className="kpi"><div className="v">{stats?.replies ?? 0}</div><div className="l">Replies ({rate(stats?.replies ?? 0)})</div></div>
         <div className="kpi"><div className="v">{stats?.clicks ?? 0}</div><div className="l">Clicks</div></div>
