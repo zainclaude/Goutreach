@@ -13,12 +13,12 @@ func (s *Store) RecordWarmupSent(ctx context.Context, fromAccount, toAccount int
 	return err
 }
 
-// CountWarmupSentToday returns how many warmup messages an account sent since midnight UTC.
+// CountWarmupSentToday returns how many warmup messages an account sent since midnight Eastern (America/New_York).
 func (s *Store) CountWarmupSentToday(ctx context.Context, accountID int64) (int, error) {
 	var n int
 	err := s.pool.QueryRow(ctx,
 		`SELECT count(*) FROM warmup_messages
-		 WHERE from_account_id=$1 AND created_at >= date_trunc('day', now())`,
+		 WHERE from_account_id=$1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'`,
 		accountID).Scan(&n)
 	return n, err
 }
@@ -76,7 +76,7 @@ func (s *Store) WarmupStats(ctx context.Context, userID int64) ([]WarmupStat, er
 		  count(w.id)                                              AS sent,
 		  count(w.id) FILTER (WHERE w.status='received')          AS inbox,
 		  count(w.id) FILTER (WHERE w.status='spam')              AS spam,
-		  count(w.id) FILTER (WHERE w.created_at >= date_trunc('day', now())) AS sent_today
+		  count(w.id) FILTER (WHERE w.created_at >= date_trunc('day', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York') AS sent_today
 		FROM email_accounts a
 		LEFT JOIN warmup_messages w
 		  ON w.from_account_id = a.id AND w.created_at >= now() - interval '30 days'

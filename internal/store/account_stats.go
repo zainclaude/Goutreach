@@ -19,13 +19,13 @@ func (s *Store) AccountStats(ctx context.Context, userID int64) ([]AccountStat, 
 		SELECT a.id, a.email,
 		 (SELECT count(*) FROM messages m
 		    WHERE m.account_id=a.id AND m.status IN ('sent','replied','bounced')
-		      AND m.sent_at >= date_trunc('day', now())) AS sent_today,
+		      AND m.sent_at >= date_trunc('day', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York') AS sent_today,
 		 (SELECT count(*) FROM messages m
 		    WHERE m.account_id=a.id AND m.status IN ('sent','replied','bounced')) AS sent_lifetime,
 		 (SELECT count(DISTINCT e.message_id) FROM events e
 		    JOIN messages m ON m.id=e.message_id
 		    WHERE m.account_id=a.id AND e.type='reply'
-		      AND e.created_at >= date_trunc('day', now())) AS replies_today,
+		      AND e.created_at >= date_trunc('day', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York') AS replies_today,
 		 (SELECT count(DISTINCT e.message_id) FROM events e
 		    JOIN messages m ON m.id=e.message_id
 		    WHERE m.account_id=a.id AND e.type='reply') AS replies_lifetime

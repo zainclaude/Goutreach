@@ -12,7 +12,7 @@ import (
 func inSendWindow(c store.Campaign, now time.Time) bool {
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
-		loc = time.UTC
+		loc, _ = time.LoadLocation("America/New_York")
 	}
 	local := now.In(loc)
 	hour := local.Hour()
@@ -32,7 +32,7 @@ func inSendWindow(c store.Campaign, now time.Time) bool {
 func nextWindowOpen(c store.Campaign, now time.Time) time.Time {
 	loc, err := time.LoadLocation(c.Timezone)
 	if err != nil {
-		loc = time.UTC
+		loc, _ = time.LoadLocation("America/New_York")
 	}
 	local := now.In(loc)
 	for i := 0; i < 14; i++ {

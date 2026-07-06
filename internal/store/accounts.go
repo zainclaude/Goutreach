@@ -171,12 +171,12 @@ func (s *Store) UpdateAccountSettings(ctx context.Context, userID, id int64, fro
 	return err
 }
 
-// CountSentToday returns how many messages an account has sent since midnight UTC.
+// CountSentToday returns how many messages an account has sent since midnight Eastern (America/New_York).
 func (s *Store) CountSentToday(ctx context.Context, accountID int64) (int, error) {
 	var n int
 	err := s.pool.QueryRow(ctx,
 		`SELECT count(*) FROM messages
-		 WHERE account_id=$1 AND status='sent' AND sent_at >= date_trunc('day', now())`,
+		 WHERE account_id=$1 AND status='sent' AND sent_at >= date_trunc('day', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'`,
 		accountID).Scan(&n)
 	return n, err
 }

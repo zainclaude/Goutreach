@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed zoneinfo so America/New_York resolves in minimal containers
 
 	"github.com/zainclaude/goutreach/internal/ai"
 	"github.com/zainclaude/goutreach/internal/api"

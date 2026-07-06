@@ -71,13 +71,23 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// easternTZ is the app-wide day boundary (EST/EDT-aware). time/tzdata is
+// embedded via cmd/server, so LoadLocation cannot fail at runtime.
+var easternTZ = func() *time.Location {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		return time.FixedZone("EST", -5*3600)
+	}
+	return loc
+}()
+
 func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
 	// ?range=today|3d|7d|all restricts the stats window (default all time).
 	var since *time.Time
-	now := time.Now().UTC()
+	now := time.Now().In(easternTZ)
 	switch r.URL.Query().Get("range") {
 	case "today":
-		t := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		t := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, easternTZ)
 		since = &t
 	case "3d":
 		t := now.Add(-3 * 24 * time.Hour)
