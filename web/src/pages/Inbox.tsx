@@ -4,6 +4,7 @@ import { api, Reply } from "../api";
 export default function Inbox() {
   const [replies, setReplies] = useState<Reply[]>([]);
   const [active, setActive] = useState<Reply | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [body, setBody] = useState("");
   const [cc, setCc] = useState("");
   const [msg, setMsg] = useState("");
@@ -18,23 +19,39 @@ export default function Inbox() {
     catch (e: any) { setMsg("✗ " + e.message); }
   };
 
+  const NOISE = ["ooo", "unsubscribe"];
+  const visible = showAll ? replies : replies.filter((r) => !NOISE.includes(r.reply_category));
+  const hidden = replies.length - visible.length;
+
   return (
     <div>
-      <h2>Inbox — lead replies</h2>
-      <p className="muted">Warmup emails are excluded. Click a reply to respond in-thread.</p>
+      <div className="flex-between">
+        <h2>Inbox — lead replies</h2>
+        {(hidden > 0 || showAll) && (
+          <button className="secondary" onClick={() => setShowAll(!showAll)}>
+            {showAll ? "Hide out-of-office & unsubscribe" : `Show all (${hidden} hidden)`}
+          </button>
+        )}
+      </div>
+      <p className="muted">
+        Warmup emails are excluded. Replies are AI-classified — out-of-office and unsubscribe
+        replies are filtered out of this view{hidden > 0 ? ` (${hidden} hidden)` : ""}, and only
+        interested replies trigger email notifications. Click a reply to respond in-thread.
+      </p>
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
           <table>
-            <thead><tr><th>From</th><th>Campaign</th><th>When</th></tr></thead>
+            <thead><tr><th>From</th><th>Type</th><th>Campaign</th><th>When</th></tr></thead>
             <tbody>
-              {replies.map((r) => (
+              {visible.map((r) => (
                 <tr key={r.message_id} style={{ cursor: "pointer" }} onClick={() => { setActive(r); setMsg(""); setCc(""); setBody(""); }}>
                   <td>{r.lead_name || r.lead_email}<div className="muted">{r.lead_email}</div></td>
+                  <td><CategoryBadge category={r.reply_category} /></td>
                   <td>{r.campaign_name}</td>
                   <td className="muted">{r.replied_at ? new Date(r.replied_at).toLocaleString() : ""}</td>
                 </tr>
               ))}
-              {replies.length === 0 && <tr><td colSpan={3} className="muted">No replies yet.</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={4} className="muted">{replies.length > 0 ? "No replies besides out-of-office/unsubscribe — use Show all." : "No replies yet."}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -66,4 +83,22 @@ export default function Inbox() {
       </div>
     </div>
   );
+}
+
+// CategoryBadge shows the AI classification of a reply.
+function CategoryBadge({ category }: { category: string }) {
+  switch (category) {
+    case "interested":
+      return <span className="badge replied" title="AI classified this as an interested reply">interested</span>;
+    case "not_interested":
+      return <span className="badge bounced" title="AI classified this as not interested">not interested</span>;
+    case "ooo":
+      return <span className="badge" title="Automated out-of-office reply">out of office</span>;
+    case "unsubscribe":
+      return <span className="badge bounced" title="Asked to be removed — consider blacklisting this domain">unsubscribe</span>;
+    case "other":
+      return <span className="badge" title="Neutral or unclear reply">other</span>;
+    default:
+      return <span className="muted" title="Not classified (received before classification existed)">—</span>;
+  }
 }

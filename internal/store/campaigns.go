@@ -444,3 +444,16 @@ func (s *Store) CampaignLeadStates(ctx context.Context, campaignID int64) (Campa
 		&c.Skipped, &c.Finished, &c.Replied, &c.Bounced, &c.NextSendAt)
 	return c, err
 }
+
+// CountCampaignSentToday returns how many campaign emails actually went out
+// since midnight Eastern (sent messages that later got replies/bounces still
+// count as sends). Backs the campaign daily cap.
+func (s *Store) CountCampaignSentToday(ctx context.Context, campaignID int64) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM messages m
+		 JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
+		 WHERE cl.campaign_id=$1 AND m.status IN ('sent','replied','bounced')
+		   AND m.sent_at >= date_trunc('day', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'`, campaignID).Scan(&n)
+	return n, err
+}

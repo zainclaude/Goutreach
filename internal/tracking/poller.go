@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zainclaude/goutreach/internal/ai"
 	"github.com/zainclaude/goutreach/internal/mailauth"
 	"github.com/zainclaude/goutreach/internal/mailer"
 	"github.com/zainclaude/goutreach/internal/store"
@@ -19,13 +20,14 @@ import (
 type Poller struct {
 	st     *store.Store
 	res    *mailauth.Resolver
+	gen    *ai.Generator
 	appURL string
 	log    *log.Logger
 }
 
-// NewPoller builds a reply/bounce poller.
-func NewPoller(st *store.Store, res *mailauth.Resolver, appURL string, logger *log.Logger) *Poller {
-	return &Poller{st: st, res: res, appURL: appURL, log: logger}
+// NewPoller builds a reply/bounce poller. gen classifies inbound replies.
+func NewPoller(st *store.Store, res *mailauth.Resolver, gen *ai.Generator, appURL string, logger *log.Logger) *Poller {
+	return &Poller{st: st, res: res, gen: gen, appURL: appURL, log: logger}
 }
 
 // Run polls all active accounts on an interval until the context is cancelled.
@@ -157,8 +159,23 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 			// Stop the sequence for a lead that replied.
 			_ = p.st.SetCampaignLeadStatus(ctx, cl.ID, "replied")
 		}
-		// Notify the user + team that there's a reply waiting (first detection only).
-		p.notifyReply(ctx, acc, in)
+		// Classify the reply so OOO/unsubscribe noise is filtered and only
+		// genuinely interested replies trigger a notification. If the classifier
+		// is unavailable, fail open and notify — never silently drop a warm lead.
+		category := ""
+		if p.gen != nil {
+			if cat, err := p.gen.ClassifyReply(ctx, in.Subject, in.Text); err == nil {
+				category = cat
+				_ = p.st.SetReplyCategory(ctx, msg.ID, cat)
+				p.log.Printf("poller: reply from %s classified as %s", in.FromAddr, cat)
+			} else {
+				p.log.Printf("poller: reply classification failed (%v) — notifying anyway", err)
+			}
+		}
+		if category == "interested" || category == "" {
+			// Notify the user + team that there's a reply waiting (first detection only).
+			p.notifyReply(ctx, acc, in)
+		}
 	}
 	return nil
 }

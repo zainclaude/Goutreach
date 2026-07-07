@@ -88,6 +88,15 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 		return s.st.AdvanceCampaignLead(ctx, cl.ID, cl.CurrentStep, next, "active")
 	}
 
+	// Campaign-level daily cap: once reached, everything else waits for the
+	// next local midnight (the window check then walks it to the window open).
+	if campaign.DailyCap > 0 {
+		if sentToday, err := s.st.CountCampaignSentToday(ctx, cl.CampaignID); err == nil && sentToday >= campaign.DailyCap {
+			s.log.Printf("sender: campaign %d daily cap reached (%d/%d) — lead %d resumes tomorrow", cl.CampaignID, sentToday, campaign.DailyCap, cl.ID)
+			return s.st.AdvanceCampaignLead(ctx, cl.ID, cl.CurrentStep, nextLocalMidnight(campaign, now), "active")
+		}
+	}
+
 	// Skip blacklisted / invalid leads, and (when enabled) hold not-yet-verified
 	// leads so we never email an address until it's been verified.
 	lead, leadErr := s.st.GetLead(ctx, cl.LeadID)
@@ -289,6 +298,16 @@ func (s *Service) requireVerified(ctx context.Context, userID int64) bool {
 		return true
 	}
 	return v != "0" && strings.ToLower(v) != "false"
+}
+
+// nextLocalMidnight is the campaign-timezone midnight after now (daily-cap reset).
+func nextLocalMidnight(c store.Campaign, now time.Time) time.Time {
+	loc, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		loc, _ = time.LoadLocation("America/New_York")
+	}
+	t := now.In(loc)
+	return time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, loc)
 }
 
 func emailDomain(email string) string {

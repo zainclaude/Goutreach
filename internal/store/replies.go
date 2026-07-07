@@ -19,7 +19,14 @@ type ReplyThread struct {
 	CampaignID   int64      `json:"campaign_id"`
 	CampaignName string     `json:"campaign_name"`
 	ReplySnippet string     `json:"reply_snippet"`
-	ReplyBody    string     `json:"reply_body"` // the lead's actual reply text
+	ReplyBody    string     `json:"reply_body"`     // the lead's actual reply text
+	Category     string     `json:"reply_category"` // interested|not_interested|ooo|unsubscribe|other|""
+}
+
+// SetReplyCategory stores the AI classification of a reply.
+func (s *Store) SetReplyCategory(ctx context.Context, id int64, category string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE messages SET reply_category=$2 WHERE id=$1`, id, category)
+	return err
 }
 
 // SetReplyBody stores the lead's parsed reply text on a message (idempotent).
@@ -37,7 +44,7 @@ func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, e
 		       l.email, trim(l.first_name || ' ' || l.last_name), c.id, c.name,
 		       COALESCE((SELECT metadata->>'subject' FROM events e
 		                 WHERE e.message_id=m.id AND e.type='reply' ORDER BY id DESC LIMIT 1), ''),
-		       m.reply_body
+		       m.reply_body, m.reply_category
 		FROM messages m
 		JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
 		JOIN leads l ON l.id = cl.lead_id
@@ -53,7 +60,7 @@ func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, e
 		var t ReplyThread
 		if err := rows.Scan(&t.MessageID, &t.AccountID, &t.RFCMessageID, &t.Subject, &t.Body,
 			&t.SentAt, &t.RepliedAt, &t.LeadEmail, &t.LeadName, &t.CampaignID, &t.CampaignName,
-			&t.ReplySnippet, &t.ReplyBody); err != nil {
+			&t.ReplySnippet, &t.ReplyBody, &t.Category); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

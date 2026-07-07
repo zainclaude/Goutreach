@@ -60,14 +60,25 @@ func (s *Server) handleCampaignSendStatus(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	// 3. Send window.
+	// 3. Campaign daily cap.
+	if c.DailyCap > 0 {
+		if sentToday, err := s.st.CountCampaignSentToday(r.Context(), c.ID); err == nil {
+			if sentToday >= c.DailyCap {
+				blockers = append(blockers, fmt.Sprintf("Daily cap reached (%d/%d sent today) — sending resumes tomorrow.", sentToday, c.DailyCap))
+			} else {
+				notes = append(notes, fmt.Sprintf("Daily cap: %d of %d used today.", sentToday, c.DailyCap))
+			}
+		}
+	}
+
+	// 4. Send window.
 	if !sender.InSendWindow(c, now) {
 		next := sender.NextWindowOpen(c, now)
 		blockers = append(blockers, fmt.Sprintf("Outside the send window (%02d:00–%02d:00 %s, days %s). Sending resumes %s.",
 			c.SendStartHour, c.SendEndHour, c.Timezone, weekdayList(c.SendWeekdays), next.Format("Mon Jan 2 15:04 MST")))
 	}
 
-	// 4. Inboxes.
+	// 5. Inboxes.
 	ids, err := s.st.ListCampaignAccountIDs(r.Context(), c.ID)
 	if err == nil {
 		if len(ids) == 0 {
