@@ -121,6 +121,12 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 				_ = p.st.CreateEvent(ctx, msg.ID, "bounce", map[string]any{"from": in.FromAddr, "reason": reason})
 				if cl, err := p.st.GetCampaignLead(ctx, msg.CampaignLeadID); err == nil {
 					_ = p.st.SetCampaignLeadStatus(ctx, cl.ID, "bounced")
+					// A hard bounce proves the mailbox doesn't exist — mark the
+					// lead invalid so no campaign ever emails it again.
+					if isHardBounce(reason) {
+						_ = p.st.SetLeadVerification(ctx, cl.LeadID, "invalid")
+						p.log.Printf("poller: hard bounce — lead %d marked invalid (won't be emailed again)", cl.LeadID)
+					}
 				}
 			}
 		}
@@ -279,6 +285,12 @@ func clip(s string, n int) string {
 	}
 	return s
 }
+
+// isHardBounce reports whether an NDR reason indicates a permanently bad
+// mailbox (as opposed to a soft failure like a full inbox or greylisting).
+var hardBounceRe = regexp.MustCompile(`(?i)address not found|user unknown|no such user|unknown recipient|does not exist|recipient not found|invalid recipient|address rejected|mailbox (unavailable|not found)|5\.1\.1`)
+
+func isHardBounce(reason string) bool { return hardBounceRe.MatchString(reason) }
 
 func isBounce(from, subject string) bool {
 	f := strings.ToLower(from)

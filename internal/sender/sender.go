@@ -90,7 +90,8 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 
 	// Skip blacklisted / invalid leads, and (when enabled) hold not-yet-verified
 	// leads so we never email an address until it's been verified.
-	if lead, err := s.st.GetLead(ctx, cl.LeadID); err == nil {
+	lead, leadErr := s.st.GetLead(ctx, cl.LeadID)
+	if leadErr == nil {
 		if bl, err := s.st.BlacklistedDomains(ctx, campaign.UserID); err == nil && store.IsBlacklisted(bl, lead.Email) {
 			s.log.Printf("sender: skipping blacklisted lead %s (campaign %d)", lead.Email, cl.CampaignID)
 			return s.st.SetCampaignLeadStatus(ctx, cl.ID, "skipped")
@@ -138,6 +139,10 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 	if err := s.send(ctx, campaign, cl, step, account, msg); err != nil {
 		_ = s.st.SetMessageFailed(ctx, msg.ID, err.Error())
 		return err
+	}
+	if leadErr == nil {
+		s.log.Printf("sender: sent msg %d to %s (verification=%s) via %s (campaign %d)",
+			msg.ID, lead.Email, lead.Verification, account.Email, cl.CampaignID)
 	}
 	return s.advance(ctx, cl, step)
 }
