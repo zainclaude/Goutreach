@@ -4,7 +4,7 @@ import { api, Reply } from "../api";
 export default function Inbox() {
   const [replies, setReplies] = useState<Reply[]>([]);
   const [active, setActive] = useState<Reply | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [filter, setFilter] = useState(() => localStorage.getItem("inbox_filter") || "interested");
   const [body, setBody] = useState("");
   const [cc, setCc] = useState("");
   const [msg, setMsg] = useState("");
@@ -19,24 +19,30 @@ export default function Inbox() {
     catch (e: any) { setMsg("✗ " + e.message); }
   };
 
-  const NOISE = ["ooo", "unsubscribe"];
-  const visible = showAll ? replies : replies.filter((r) => !NOISE.includes(r.reply_category));
+  const setAndSaveFilter = (f: string) => { setFilter(f); localStorage.setItem("inbox_filter", f); };
+  // Unclassified ("") replies are treated as potentially interested — never hidden by default.
+  const visible = replies.filter((r) => {
+    if (filter === "all") return true;
+    if (filter === "no-noise") return !["ooo", "unsubscribe"].includes(r.reply_category);
+    return r.reply_category === "interested" || r.reply_category === "";
+  });
   const hidden = replies.length - visible.length;
 
   return (
     <div>
       <div className="flex-between">
         <h2>Inbox — lead replies</h2>
-        {(hidden > 0 || showAll) && (
-          <button className="secondary" onClick={() => setShowAll(!showAll)}>
-            {showAll ? "Hide out-of-office & unsubscribe" : `Show all (${hidden} hidden)`}
-          </button>
-        )}
+        <select style={{ width: "auto" }} value={filter} onChange={(e) => setAndSaveFilter(e.target.value)}>
+          <option value="interested">Interested only</option>
+          <option value="no-noise">All except OOO & unsubscribe</option>
+          <option value="all">All replies</option>
+        </select>
       </div>
       <p className="muted">
-        Warmup emails are excluded. Replies are AI-classified — out-of-office and unsubscribe
-        replies are filtered out of this view{hidden > 0 ? ` (${hidden} hidden)` : ""}, and only
-        interested replies trigger email notifications. Click a reply to respond in-thread.
+        Warmup emails are excluded. Replies are AI-classified; this view shows{" "}
+        {filter === "all" ? "every reply" : filter === "no-noise" ? "everything except out-of-office and unsubscribe replies" : "interested (and not-yet-classified) replies"}
+        {hidden > 0 ? ` — ${hidden} hidden by the filter` : ""}. Only interested replies trigger
+        email notifications. Click a reply to respond in-thread.
       </p>
       <div className="row" style={{ alignItems: "flex-start" }}>
         <div className="card" style={{ flex: 1, minWidth: 320 }}>
@@ -51,7 +57,7 @@ export default function Inbox() {
                   <td className="muted">{r.replied_at ? new Date(r.replied_at).toLocaleString() : ""}</td>
                 </tr>
               ))}
-              {visible.length === 0 && <tr><td colSpan={4} className="muted">{replies.length > 0 ? "No replies besides out-of-office/unsubscribe — use Show all." : "No replies yet."}</td></tr>}
+              {visible.length === 0 && <tr><td colSpan={4} className="muted">{replies.length > 0 ? "No replies match this filter — switch to \"All replies\" above." : "No replies yet."}</td></tr>}
             </tbody>
           </table>
         </div>
