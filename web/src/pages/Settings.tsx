@@ -53,7 +53,19 @@ export default function Settings() {
             </div>
           </div>
         ))}
-        {msg && <p className="ok">{msg}</p>}
+        <div className="row" style={{ marginTop: 6 }}>
+          <button
+            className="secondary"
+            onClick={async () => {
+              setMsg("Testing FastMoss key…");
+              try { await api.get("/research/fastmoss/ping"); setMsg("✓ FastMoss key works — live TikTok Shop data is available."); }
+              catch (e: any) { setMsg("✗ " + e.message); }
+            }}
+          >
+            Test FastMoss key
+          </button>
+        </div>
+        {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
       </div>
 
       <div className="card">
