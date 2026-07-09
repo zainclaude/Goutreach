@@ -100,6 +100,8 @@ func (s *Server) Router() http.Handler {
 			r.Post("/sync", s.handleMaildosoSync)
 		})
 
+		r.Get("/research/fastmoss/ping", s.handleFastmossPing)
+
 		// Returns the Google consent URL to redirect the browser to.
 		r.Get("/oauth/google/start", s.handleGoogleStart)
 

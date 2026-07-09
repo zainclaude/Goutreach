@@ -57,9 +57,21 @@ func (c *Client) Configured() bool { return c.secret != "" }
 
 // envelope is FastMoss's standard wrapper: {code, msg, data, request_id, timestamp}.
 type envelope struct {
-	Code int             `json:"code"`
-	Msg  string          `json:"msg"`
-	Data json.RawMessage `json:"data"`
+	Code    int             `json:"code"`
+	Msg     string          `json:"msg"`
+	Message string          `json:"message"` // some endpoints use "message" instead of "msg"
+	Data    json.RawMessage `json:"data"`
+}
+
+// errText returns the server's error text wherever it was put.
+func (e envelope) errText(raw []byte) string {
+	if e.Msg != "" {
+		return e.Msg
+	}
+	if e.Message != "" {
+		return e.Message
+	}
+	return "body: " + snippet(raw)
 }
 
 // post sends a JSON body and decodes the envelope's data into out.
@@ -90,7 +102,7 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 		return fmt.Errorf("%s: decode: %w", path, err)
 	}
 	if env.Code != 0 {
-		return fmt.Errorf("%s: code %d: %s", path, env.Code, env.Msg)
+		return fmt.Errorf("%s: code %d: %s", path, env.Code, env.errText(raw))
 	}
 	if out != nil && len(env.Data) > 0 {
 		if err := json.Unmarshal(env.Data, out); err != nil {
