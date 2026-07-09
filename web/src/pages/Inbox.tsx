@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { api, Reply } from "../api";
+import { api, Reply, SentMessage } from "../api";
 
 export default function Inbox() {
   const [replies, setReplies] = useState<Reply[]>([]);
   const [active, setActive] = useState<Reply | null>(null);
   const [filter, setFilter] = useState(() => localStorage.getItem("inbox_filter") || "interested");
+  const [view, setView] = useState<"replies" | "sent">("replies");
+  const [sent, setSent] = useState<SentMessage[] | null>(null);
+  const [activeSent, setActiveSent] = useState<SentMessage | null>(null);
   const [body, setBody] = useState("");
   const [cc, setCc] = useState("");
   const [msg, setMsg] = useState("");
@@ -20,6 +23,13 @@ export default function Inbox() {
   };
 
   const setAndSaveFilter = (f: string) => { setFilter(f); localStorage.setItem("inbox_filter", f); };
+  const openSentView = async () => {
+    setView("sent");
+    if (sent === null) {
+      const m = await api.get<SentMessage[]>("/messages/sent").catch(() => [] as SentMessage[]);
+      setSent(m || []);
+    }
+  };
   // Unclassified ("") replies are treated as potentially interested — never hidden by default.
   const visible = replies.filter((r) => {
     if (filter === "all") return true;
@@ -31,13 +41,62 @@ export default function Inbox() {
   return (
     <div>
       <div className="flex-between">
-        <h2>Inbox — lead replies</h2>
-        <select style={{ width: "auto" }} value={filter} onChange={(e) => setAndSaveFilter(e.target.value)}>
-          <option value="interested">Interested only</option>
-          <option value="no-noise">All except OOO & unsubscribe</option>
-          <option value="all">All replies</option>
-        </select>
+        <h2>{view === "replies" ? "Inbox — lead replies" : "Sent emails"}</h2>
+        <div className="row">
+          {view === "replies" ? (
+            <>
+              <select style={{ width: "auto" }} value={filter} onChange={(e) => setAndSaveFilter(e.target.value)}>
+                <option value="interested">Interested only</option>
+                <option value="no-noise">All except OOO & unsubscribe</option>
+                <option value="all">All replies</option>
+              </select>
+              <button className="secondary" onClick={openSentView}>View sent emails</button>
+            </>
+          ) : (
+            <button className="secondary" onClick={() => setView("replies")}>← Back to replies</button>
+          )}
+        </div>
       </div>
+      {view === "sent" && (
+        <>
+          <p className="muted">
+            Every campaign email actually delivered ({(sent || []).length} shown, newest first). Warmup
+            emails are excluded. Click one to read exactly what was generated and sent.
+          </p>
+          <div className="row" style={{ alignItems: "flex-start" }}>
+            <div className="card" style={{ flex: 1, minWidth: 320 }}>
+              <table>
+                <thead><tr><th>To</th><th>Subject</th><th>Campaign</th><th>Status</th><th>When</th></tr></thead>
+                <tbody>
+                  {(sent || []).map((m) => (
+                    <tr key={m.id} style={{ cursor: "pointer" }} onClick={() => setActiveSent(m)}>
+                      <td>{m.lead_name || m.lead_email}<div className="muted">{m.lead_email}</div></td>
+                      <td>{m.subject}</td>
+                      <td>{m.campaign_name}</td>
+                      <td><span className={`badge ${m.status}`}>{m.status}</span></td>
+                      <td className="muted">{m.sent_at ? new Date(m.sent_at).toLocaleString() : ""}</td>
+                    </tr>
+                  ))}
+                  {sent !== null && sent.length === 0 && <tr><td colSpan={5} className="muted">No emails sent yet.</td></tr>}
+                  {sent === null && <tr><td colSpan={5} className="muted">Loading…</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {activeSent && (
+              <div className="card" style={{ flex: 1, minWidth: 360 }}>
+                <h3>{activeSent.subject}</h3>
+                <p className="muted">
+                  To: {activeSent.lead_email} · via {activeSent.account_email || "?"} · {activeSent.campaign_name}
+                  {activeSent.template_used && <> · template {activeSent.template_used}</>}
+                </p>
+                <div className="card" style={{ background: "var(--panel2)", whiteSpace: "pre-wrap" }}>{activeSent.body}</div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {view === "replies" && (<>
       <p className="muted">
         Warmup emails are excluded. Replies are AI-classified; this view shows{" "}
         {filter === "all" ? "every reply" : filter === "no-noise" ? "everything except out-of-office and unsubscribe replies" : "interested (and not-yet-classified) replies"}
@@ -87,6 +146,7 @@ export default function Inbox() {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

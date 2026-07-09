@@ -17,6 +17,17 @@ func (s *Server) handleListReplies(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, replies)
 }
 
+// handleListSent returns delivered campaign emails (warmup excluded) so the
+// user can see what was actually generated and sent.
+func (s *Server) handleListSent(w http.ResponseWriter, r *http.Request) {
+	msgs, err := s.st.ListSentMessages(r.Context(), s.userID(r), 500)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, msgs)
+}
+
 // handleSendReply sends a manual reply in the thread of a replied message, from
 // the same inbox that originally sent it.
 func (s *Server) handleSendReply(w http.ResponseWriter, r *http.Request) {

@@ -89,3 +89,48 @@ func (s *Store) GetReplyContext(ctx context.Context, userID, messageID int64) (M
 	}
 	return m, acc, lead, true, nil
 }
+
+// SentMessage is one delivered campaign email, for the sent-mail view.
+type SentMessage struct {
+	ID           int64      `json:"id"`
+	Subject      string     `json:"subject"`
+	Body         string     `json:"body"`
+	Status       string     `json:"status"` // sent|replied|bounced
+	SentAt       *time.Time `json:"sent_at"`
+	TemplateUsed string     `json:"template_used"`
+	LeadEmail    string     `json:"lead_email"`
+	LeadName     string     `json:"lead_name"`
+	CampaignName string     `json:"campaign_name"`
+	AccountEmail string     `json:"account_email"` // sending inbox
+}
+
+// ListSentMessages returns the user's delivered campaign emails, newest first.
+// Warmup mail is excluded by construction (it never enters the messages table).
+func (s *Store) ListSentMessages(ctx context.Context, userID int64, limit int) ([]SentMessage, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT m.id, m.subject, m.body, m.status, m.sent_at, m.template_used,
+		       l.email, trim(l.first_name || ' ' || l.last_name), c.name,
+		       COALESCE(a.email, '')
+		FROM messages m
+		JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
+		JOIN leads l ON l.id = cl.lead_id
+		JOIN campaigns c ON c.id = cl.campaign_id
+		LEFT JOIN email_accounts a ON a.id = m.account_id
+		WHERE c.user_id=$1 AND m.status IN ('sent','replied','bounced')
+		ORDER BY m.sent_at DESC NULLS LAST
+		LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SentMessage
+	for rows.Next() {
+		var m SentMessage
+		if err := rows.Scan(&m.ID, &m.Subject, &m.Body, &m.Status, &m.SentAt, &m.TemplateUsed,
+			&m.LeadEmail, &m.LeadName, &m.CampaignName, &m.AccountEmail); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

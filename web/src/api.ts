@@ -124,6 +124,11 @@ export interface MaildosoDomain { id: number; domain_name: string; status: strin
 export interface MaildosoSync { added: number; pending: number; failed: number; errors: { email: string; error: string }[]; }
 export interface Template { key: string; name: string; subject: string; body: string; }
 export interface Setting { key: string; value: string; is_secret: boolean; }
+export interface SentMessage {
+  id: number; subject: string; body: string; status: string;
+  sent_at: string | null; template_used: string;
+  lead_email: string; lead_name: string; campaign_name: string; account_email: string;
+}
 export interface Reply {
   message_id: number; subject: string; body: string;
   lead_email: string; lead_name: string; campaign_name: string;

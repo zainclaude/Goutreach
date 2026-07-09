@@ -137,6 +137,7 @@ func (s *Server) Router() http.Handler {
 		})
 
 		r.Route("/messages", func(r chi.Router) {
+			r.Get("/sent", s.handleListSent)
 			r.Post("/{id}/approve", s.handleApproveMessage)
 			r.Delete("/{id}", s.handleRejectMessage)
 			r.Patch("/{id}", s.handleEditMessage)
