@@ -134,30 +134,39 @@ func (c *Client) VerifyKey(ctx context.Context) error {
 // BrandMetrics resolves a brand to a shop and returns its GMV + creator/video
 // counts for the trailing month.
 func (c *Client) BrandMetrics(ctx context.Context, brand string) (Metrics, error) {
-	var search struct {
-		Total int              `json:"total"`
-		List  []map[string]any `json:"list"`
-	}
-	// The search term is the top-level "keywords" (fuzzy match); filter.keyword
-	// is not a real field, so sending it there returns an unfiltered default
-	// list. Order by total GMV so the largest matching shop surfaces first.
-	if err := c.post(ctx, pathShopSearch, map[string]any{
-		"keywords": brand,
-		"filter":   map[string]any{"region": "US"},
-		"orderby":  []map[string]any{{"field": "total_gmv", "order": "desc"}},
-		"page":     1, "pagesize": 10,
-	}, &search); err != nil {
-		return Metrics{}, err
-	}
-	c.logf("fastmoss: search %q returned %d shops; keys of top hit: %v", brand, len(search.List), keysOf(search.List))
-	if len(search.List) > 0 {
-		if b, err := json.Marshal(search.List[0]); err == nil {
-			c.logf("fastmoss: top result raw: %s", clip(string(b), 700))
+	// FastMoss keyword search often misses on long multi-word names even when
+	// the shop is indexed ("HealthForce SuperFoods" -> 0 hits, "HealthForce" ->
+	// hit). Try progressively simpler keywords; pickShop still enforces a name
+	// match against the full brand, so simpler keywords can't grab a wrong shop.
+	var shop map[string]any
+	for _, kw := range searchKeywords(brand) {
+		var search struct {
+			Total int              `json:"total"`
+			List  []map[string]any `json:"list"`
 		}
+		// The search term is the top-level "keywords" (fuzzy match); filter.keyword
+		// is not a real field, so sending it there returns an unfiltered default
+		// list. Order by total GMV so the largest matching shop surfaces first.
+		if err := c.post(ctx, pathShopSearch, map[string]any{
+			"keywords": kw,
+			"filter":   map[string]any{"region": "US"},
+			"orderby":  []map[string]any{{"field": "total_gmv", "order": "desc"}},
+			"page":     1, "pagesize": 10,
+		}, &search); err != nil {
+			return Metrics{}, err
+		}
+		c.logf("fastmoss: search %q returned %d shops; keys of top hit: %v", kw, len(search.List), keysOf(search.List))
+		if len(search.List) > 0 {
+			if b, err := json.Marshal(search.List[0]); err == nil {
+				c.logf("fastmoss: top result raw: %s", clip(string(b), 700))
+			}
+		}
+		if shop = pickShop(brand, search.List); shop != nil {
+			break
+		}
+		c.logf("fastmoss: no shop matched %q via keyword %q", brand, kw)
 	}
-	shop := pickShop(brand, search.List)
 	if shop == nil {
-		c.logf("fastmoss: no shop matched %q (want=%q)", brand, normName(brand))
 		return Metrics{}, nil // not found on TikTok Shop
 	}
 	shopID := firstStr(shop, "seller_id", "shop_id", "id")
@@ -330,4 +339,35 @@ func clip(s string, n int) string {
 		return s[:n] + "…"
 	}
 	return s
+}
+
+// legalSuffixes are trailing company-name tokens that hurt keyword recall.
+var legalSuffixes = map[string]bool{
+	"inc": true, "inc.": true, "llc": true, "ltd": true, "ltd.": true,
+	"corp": true, "corp.": true, "corporation": true, "co": true, "co.": true,
+	"company": true, "gmbh": true, "limited": true,
+}
+
+// searchKeywords returns the keyword ladder for a brand: the full name, the
+// name without legal suffixes, and the first word — deduped, in order.
+func searchKeywords(brand string) []string {
+	out := []string{brand}
+	seen := map[string]bool{strings.ToLower(brand): true}
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[strings.ToLower(s)] {
+			return
+		}
+		seen[strings.ToLower(s)] = true
+		out = append(out, s)
+	}
+	fields := strings.Fields(brand)
+	for len(fields) > 1 && legalSuffixes[strings.ToLower(fields[len(fields)-1])] {
+		fields = fields[:len(fields)-1]
+	}
+	add(strings.Join(fields, " "))
+	if len(fields) > 1 && len(fields[0]) >= 4 {
+		add(fields[0])
+	}
+	return out
 }
