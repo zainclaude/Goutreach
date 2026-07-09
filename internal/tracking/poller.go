@@ -118,6 +118,11 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 		if msg, ok, _ := p.st.FindSentMessageByThread(ctx, acc.ID, candidates); ok {
 			reason := bounceReason(in.Text)
 			_ = p.st.SetMessageBounced(ctx, msg.ID, reason)
+			// Security gateways often send a rejection notice from the recipient's
+			// own address seconds before the real NDR; that notice gets recorded as
+			// a reply. The bounce supersedes it — drop the bogus reply event so the
+			// dashboard's reply count matches the inbox.
+			_ = p.st.DeleteReplyEvents(ctx, msg.ID)
 			p.log.Printf("poller: bounce msg %d via %s: %s", msg.ID, acc.Email, reason)
 			if msg.Status != "bounced" {
 				_ = p.st.CreateEvent(ctx, msg.ID, "bounce", map[string]any{"from": in.FromAddr, "reason": reason})

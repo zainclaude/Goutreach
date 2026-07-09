@@ -130,3 +130,11 @@ func (s *Store) OverviewStats(ctx context.Context, userID int64, since *time.Tim
 	}
 	return cs, rows.Err()
 }
+
+// DeleteReplyEvents removes reply events recorded for a message. Used when a
+// bounce supersedes a "reply" that was really the gateway's rejection notice,
+// so reply counts stay consistent with the inbox.
+func (s *Store) DeleteReplyEvents(ctx context.Context, messageID int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM events WHERE message_id=$1 AND type='reply'`, messageID)
+	return err
+}
