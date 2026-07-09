@@ -21,7 +21,22 @@ func (s *Server) handleFastmossPing(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "could not decrypt stored key: "+err.Error())
 		return
 	}
-	if err := fastmoss.New(secret, "").VerifyKey(r.Context()); err != nil {
+	client := fastmoss.New(secret, "")
+	// ?brand=Acme runs a real shop lookup (the same one email research uses),
+	// so index coverage is testable without spending an AI generation.
+	if brand := r.URL.Query().Get("brand"); brand != "" {
+		m, err := client.BrandMetrics(r.Context(), brand)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, "FastMoss error: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "found": m.Found, "shop_name": m.ShopName,
+			"revenue_usd": m.RevenueUSD, "creators": m.Creators, "videos": m.Videos,
+		})
+		return
+	}
+	if err := client.VerifyKey(r.Context()); err != nil {
 		writeErr(w, http.StatusBadGateway, "FastMoss rejected the key: "+err.Error())
 		return
 	}

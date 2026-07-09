@@ -64,6 +64,29 @@ export default function Settings() {
           >
             Test FastMoss key
           </button>
+          <input
+            style={{ width: 220 }}
+            placeholder="Brand name (e.g. HealthForce)"
+            value={vals["__fm_test_brand"] || ""}
+            onChange={(e) => setVals({ ...vals, __fm_test_brand: e.target.value })}
+          />
+          <button
+            className="secondary"
+            onClick={async () => {
+              const b = (vals["__fm_test_brand"] || "").trim();
+              if (!b) { setMsg("✗ Enter a brand name to look up."); return; }
+              setMsg(`Looking up "${b}" on FastMoss…`);
+              try {
+                const r = await api.get<{ found: boolean; shop_name: string; revenue_usd: number; creators: number; videos: number }>(
+                  `/research/fastmoss/ping?brand=${encodeURIComponent(b)}`);
+                setMsg(r.found
+                  ? `✓ Found "${r.shop_name}": $${Math.round(r.revenue_usd).toLocaleString()} GMV · ${r.creators} creators · ${r.videos} videos (30d)`
+                  : `✗ FastMoss has no US shop matching "${b}" — emails for this brand will use fallback wording.`);
+              } catch (e: any) { setMsg("✗ " + e.message); }
+            }}
+          >
+            Test brand lookup
+          </button>
         </div>
         {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
       </div>
