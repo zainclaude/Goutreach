@@ -236,12 +236,16 @@ func (s *Store) ListCampaignAccountIDs(ctx context.Context, campaignID int64) ([
 func (s *Store) EnrollLeads(ctx context.Context, campaignID int64, leadIDs []int64) (int, error) {
 	added := 0
 	for _, lid := range leadIDs {
-		// The join refuses leads whose email verification came back invalid or
-		// risky — they can't be enrolled through any path (picker or bulk).
+		// The join refuses leads whose email verification came back invalid,
+		// risky, or inconclusive (unknown after an actual check) — they can't be
+		// enrolled through any path (picker or bulk). Never-verified leads
+		// (unknown with no verified_at) may enroll; the sender holds them until
+		// verification runs.
 		ct, err := s.pool.Exec(ctx,
 			`INSERT INTO campaign_leads (campaign_id, lead_id, next_send_at)
 			 SELECT $1, l.id, now() FROM leads l
 			 WHERE l.id = $2 AND l.verification_status NOT IN ('invalid','risky')
+			   AND NOT (l.verification_status = 'unknown' AND l.verified_at IS NOT NULL)
 			 ON CONFLICT DO NOTHING`, campaignID, lid)
 		if err != nil {
 			return added, err
@@ -417,7 +421,7 @@ type CampaignLeadStateCounts struct {
 	Active     int        `json:"active"`
 	DueNow     int        `json:"due_now"`
 	Unverified int        `json:"unverified"` // active + never verified
-	BadEmail   int        `json:"bad_email"`  // active + invalid/risky
+	BadEmail   int        `json:"bad_email"`  // active + invalid/risky/inconclusive
 	Skipped    int        `json:"skipped"`
 	Finished   int        `json:"finished"`
 	Replied    int        `json:"replied"`
@@ -432,7 +436,8 @@ func (s *Store) CampaignLeadStates(ctx context.Context, campaignID int64) (Campa
 		  count(*) FILTER (WHERE cl.status='active'),
 		  count(*) FILTER (WHERE cl.status='active' AND cl.next_send_at <= now()),
 		  count(*) FILTER (WHERE cl.status='active' AND l.verification_status='unknown' AND l.verified_at IS NULL),
-		  count(*) FILTER (WHERE cl.status='active' AND l.verification_status IN ('invalid','risky')),
+		  count(*) FILTER (WHERE cl.status='active' AND (l.verification_status IN ('invalid','risky')
+		                     OR (l.verification_status='unknown' AND l.verified_at IS NOT NULL))),
 		  count(*) FILTER (WHERE cl.status='skipped'),
 		  count(*) FILTER (WHERE cl.status='finished'),
 		  count(*) FILTER (WHERE cl.status='replied'),

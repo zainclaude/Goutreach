@@ -56,7 +56,7 @@ func (s *Server) handleCampaignSendStatus(w http.ResponseWriter, r *http.Request
 			}
 		}
 		if counts.BadEmail > 0 {
-			notes = append(notes, fmt.Sprintf("%d active lead(s) verified invalid/risky and will be skipped at send time.", counts.BadEmail))
+			notes = append(notes, fmt.Sprintf("%d active lead(s) verified invalid/risky/inconclusive and will be skipped at send time.", counts.BadEmail))
 		}
 	}
 

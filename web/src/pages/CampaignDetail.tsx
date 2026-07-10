@@ -171,7 +171,8 @@ export default function CampaignDetail() {
         })()}
         {showPicker && (() => {
           const enrolledIds = new Set(enrolled.map((e) => e.lead_id));
-          const pickable = leads.filter((l) => l.verification_status !== "invalid" && l.verification_status !== "risky");
+          const pickable = leads.filter((l) => l.verification_status !== "invalid" && l.verification_status !== "risky"
+            && !(l.verification_status === "unknown" && l.verified_at));
           const hidden = leads.length - pickable.length;
           return (
           <div style={{ marginTop: 12, maxHeight: 300, overflow: "auto", border: "1px solid #2a2a2a", borderRadius: 6, padding: 10 }}>
@@ -180,7 +181,7 @@ export default function CampaignDetail() {
               <button className="secondary" onClick={() => setSelected([])}>Clear</button>
               <button onClick={enrollSelected} disabled={selected.length === 0}>Enroll selected ({selected.length})</button>
             </div>
-            {hidden > 0 && <p className="muted" style={{ margin: "0 0 8px" }}>{hidden} lead(s) hidden — verification marked them invalid or risky.</p>}
+            {hidden > 0 && <p className="muted" style={{ margin: "0 0 8px" }}>{hidden} lead(s) hidden — verification marked them invalid, risky, or couldn't confirm the mailbox.</p>}
             {pickable.length === 0 && <p className="muted">No selectable leads — import leads first.</p>}
             {pickable.map((l) => {
               const isEnrolled = enrolledIds.has(l.id);
