@@ -68,6 +68,31 @@ func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, e
 	return out, rows.Err()
 }
 
+// ListInterestedLeadEmails returns the distinct emails of leads whose replies
+// were classified interested, for the beehiiv newsletter sync.
+func (s *Store) ListInterestedLeadEmails(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT DISTINCT l.email
+		FROM messages m
+		JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
+		JOIN leads l ON l.id = cl.lead_id
+		JOIN campaigns c ON c.id = cl.campaign_id
+		WHERE c.user_id=$1 AND m.status='replied' AND m.reply_category='interested'`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var e string
+		if err := rows.Scan(&e); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // GetReplyContext loads what's needed to send a manual reply to a thread, scoped
 // to the user.
 func (s *Store) GetReplyContext(ctx context.Context, userID, messageID int64) (Message, EmailAccount, Lead, bool, error) {

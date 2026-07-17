@@ -1,9 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/zainclaude/goutreach/internal/beehiiv"
 	"github.com/zainclaude/goutreach/internal/mailer"
 )
 
@@ -26,6 +28,39 @@ func (s *Server) handleListSent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, msgs)
+}
+
+// handleBeehiivSync subscribes every interested replier to the configured
+// beehiiv newsletter. Idempotent (beehiiv upserts), so it doubles as a
+// key-validity test and a backfill for replies from before the integration.
+func (s *Server) handleBeehiivSync(w http.ResponseWriter, r *http.Request) {
+	userID := s.userID(r)
+	pubID, _, _ := s.st.GetSetting(r.Context(), userID, "beehiiv_publication_id")
+	enc, _, _ := s.st.GetSetting(r.Context(), userID, "beehiiv_api_key")
+	if strings.TrimSpace(pubID) == "" || enc == "" {
+		writeErr(w, http.StatusBadRequest, "add your beehiiv API key and publication ID first")
+		return
+	}
+	apiKey, err := s.cipher.Decrypt(enc)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "decrypt beehiiv key: "+err.Error())
+		return
+	}
+	emails, err := s.st.ListInterestedLeadEmails(r.Context(), userID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	added, errs := 0, []string{}
+	for _, e := range emails {
+		if err := beehiiv.Subscribe(r.Context(), apiKey, pubID, e); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", e, err))
+			s.log.Printf("beehiiv sync: %s: %v", e, err)
+			continue
+		}
+		added++
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"synced": added, "total": len(emails), "errors": errs})
 }
 
 // handleSendReply sends a manual reply in the thread of a replied message, from

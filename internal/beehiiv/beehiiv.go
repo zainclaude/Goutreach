@@ -24,7 +24,11 @@ func Subscribe(ctx context.Context, apiKey, publicationID, email string) error {
 		"utm_source": "pipelinebuilder",
 		"utm_medium": "cold_outreach_reply",
 	})
-	url := fmt.Sprintf("%s/publications/%s/subscriptions", baseURL, strings.TrimSpace(publicationID))
+	pubID := strings.TrimSpace(publicationID)
+	if pubID != "" && !strings.HasPrefix(pubID, "pub_") {
+		pubID = "pub_" + pubID // beehiiv shows the bare UUID in some UI spots
+	}
+	url := fmt.Sprintf("%s/publications/%s/subscriptions", baseURL, pubID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return err

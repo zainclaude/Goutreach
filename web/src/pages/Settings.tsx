@@ -187,7 +187,24 @@ export default function Settings() {
           />
           <button onClick={() => save("beehiiv_publication_id", false)}>Save</button>
         </div>
-        {msg && <p className="ok">{msg}</p>}
+        <div className="row" style={{ marginTop: 10 }}>
+          <button
+            className="secondary"
+            onClick={async () => {
+              setMsg("");
+              try {
+                const r = await api.post<{ synced: number; total: number; errors: string[] }>("/replies/beehiiv-sync");
+                setMsg(r.errors.length > 0
+                  ? `✗ Synced ${r.synced}/${r.total} — ${r.errors.join("; ")}`
+                  : `✓ Synced ${r.synced} interested lead(s) to beehiiv`);
+              } catch (e: any) { setMsg("✗ " + e.message); }
+            }}
+            title="Adds every interested replier (past and present) to the newsletter — safe to run repeatedly"
+          >
+            Sync interested replies now
+          </button>
+        </div>
+        {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
       </div>
     </div>
   );

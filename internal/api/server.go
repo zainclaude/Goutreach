@@ -107,6 +107,7 @@ func (s *Server) Router() http.Handler {
 
 		r.Route("/replies", func(r chi.Router) {
 			r.Get("/", s.handleListReplies)
+			r.Post("/beehiiv-sync", s.handleBeehiivSync)
 			r.Post("/{id}/reply", s.handleSendReply)
 		})
 
