@@ -109,6 +109,10 @@ export default function CampaignDetail() {
 
       <div className="kpis">
         <div className="kpi"><div className="v">{stats?.sent ?? 0}</div><div className="l">Sent</div></div>
+        <div className="kpi" title="Enrolled leads still waiting to be emailed (excludes leads verification will skip)">
+          <div className="v">{sendStatus ? Math.max(0, sendStatus.counts.active - sendStatus.counts.bad_email) : "—"}</div>
+          <div className="l">Remaining</div>
+        </div>
         <div className="kpi"><div className="v">{stats?.opens ?? 0}</div><div className="l">Opens</div></div>
         <div className="kpi"><div className="v">{stats?.replies ?? 0}</div><div className="l">Replies</div></div>
         <div className="kpi"><div className="v">{stats?.bounces ?? 0}</div><div className="l">Bounces</div></div>
