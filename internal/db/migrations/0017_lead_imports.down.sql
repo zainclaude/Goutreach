@@ -1,0 +1,2 @@
+ALTER TABLE leads DROP COLUMN IF EXISTS import_id;
+DROP TABLE IF EXISTS lead_imports;

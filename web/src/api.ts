@@ -43,8 +43,16 @@ export const api = {
   del: <T>(p: string) => req<T>("DELETE", p),
 };
 
-export async function uploadCSV(file: File) {
-  return uploadTo("/api/leads/import", file);
+export async function uploadCSV(files: File[]) {
+  const fd = new FormData();
+  for (const f of files) fd.append("file", f);
+  const res = await fetch("/api/leads/import", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: fd,
+  });
+  if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+  return res.json();
 }
 
 export async function uploadAccountsCSV(file: File, skipVerify = false) {
@@ -86,6 +94,15 @@ export interface Lead {
   id: number; email: string; first_name: string; last_name: string;
   company: string; title: string; status: string; contacted: boolean;
   verification_status: string; verified_at: string | null;
+  source_file: string;
+}
+export interface LeadImport {
+  id: number; filename: string; imported: number; updated: number;
+  skipped: number; blacklisted: number; created_at: string;
+}
+export interface ImportFileResult {
+  filename: string; imported: number; updated: number; skipped: number;
+  blacklisted: number; error?: string;
 }
 export interface Campaign {
   id: number; name: string; brief: string; status: string;

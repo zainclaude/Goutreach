@@ -21,6 +21,8 @@ type Lead struct {
 	Contacted    bool            `json:"contacted"`           // has ever had an email actually sent
 	Verification string          `json:"verification_status"` // unknown|valid|invalid|risky|catch_all
 	VerifiedAt   *time.Time      `json:"verified_at"`
+	ImportID     *int64          `json:"import_id,omitempty"` // upload the lead first arrived in
+	SourceFile   string          `json:"source_file"`         // filename of that upload ("" if added manually)
 }
 
 // contactedExpr is true when a lead has a message that was actually sent (in any
@@ -70,17 +72,20 @@ func (s *Store) UpsertLead(ctx context.Context, l Lead) (Lead, bool, error) {
 	if len(l.CustomFields) == 0 {
 		l.CustomFields = json.RawMessage(`{}`)
 	}
+	// import_id keeps the FIRST file the lead arrived in — re-importing an
+	// existing lead updates its fields but not its origin.
 	row := s.pool.QueryRow(ctx,
-		`INSERT INTO leads (user_id, email, first_name, last_name, company, title, custom_fields)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7)
+		`INSERT INTO leads (user_id, email, first_name, last_name, company, title, custom_fields, import_id)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		 ON CONFLICT (user_id, email) DO UPDATE SET
 		   first_name = EXCLUDED.first_name,
 		   last_name  = EXCLUDED.last_name,
 		   company    = EXCLUDED.company,
 		   title      = EXCLUDED.title,
-		   custom_fields = EXCLUDED.custom_fields
+		   custom_fields = EXCLUDED.custom_fields,
+		   import_id  = COALESCE(leads.import_id, EXCLUDED.import_id)
 		 RETURNING `+leadCols+`, (xmax = 0) AS inserted`,
-		l.UserID, l.Email, l.FirstName, l.LastName, l.Company, l.Title, l.CustomFields)
+		l.UserID, l.Email, l.FirstName, l.LastName, l.Company, l.Title, l.CustomFields, l.ImportID)
 	var out Lead
 	var inserted bool
 	err := row.Scan(&out.ID, &out.UserID, &out.Email, &out.FirstName, &out.LastName,
@@ -89,10 +94,12 @@ func (s *Store) UpsertLead(ctx context.Context, l Lead) (Lead, bool, error) {
 	return out, inserted, err
 }
 
-// ListLeads returns leads for a user.
+// ListLeads returns leads for a user, with the filename of the upload each
+// lead first arrived in ("" for manually added leads).
 func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT `+leadCols+`, `+contactedExpr+` AS contacted
+		`SELECT `+leadCols+`, `+contactedExpr+` AS contacted,
+		        COALESCE((SELECT li.filename FROM lead_imports li WHERE li.id = leads.import_id), '')
 		 FROM leads WHERE user_id=$1 ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -102,7 +109,8 @@ func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	for rows.Next() {
 		var l Lead
 		if err := rows.Scan(&l.ID, &l.UserID, &l.Email, &l.FirstName, &l.LastName, &l.Company,
-			&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt, &l.Verification, &l.VerifiedAt, &l.Contacted); err != nil {
+			&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt, &l.Verification, &l.VerifiedAt,
+			&l.Contacted, &l.SourceFile); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

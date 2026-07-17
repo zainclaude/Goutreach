@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { api, uploadCSV, Lead } from "../api";
+import { api, uploadCSV, Lead, LeadImport, ImportFileResult } from "../api";
 
 export default function Leads() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [form, setForm] = useState({ email: "", first_name: "", last_name: "", company: "", title: "" });
   const [msg, setMsg] = useState("");
+  const [history, setHistory] = useState<LeadImport[] | null>(null); // null = panel closed
 
   const load = () => api.get<Lead[]>("/leads").then((l) => setLeads(l || []));
   useEffect(() => { load(); }, []);
+
+  const loadHistory = () => api.get<LeadImport[]>("/leads/imports").then((h) => setHistory(h || []));
+  const toggleHistory = () => (history === null ? loadHistory() : setHistory(null));
 
   const set = (k: string, v: string) => setForm({ ...form, [k]: v });
   const add = async () => {
@@ -15,14 +19,21 @@ export default function Leads() {
     catch (e: any) { setMsg(e.message); }
   };
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    e.target.value = ""; // allow re-selecting the same file(s)
+    setMsg("Uploading…");
     try {
-      const r = await uploadCSV(f);
-      let m = `Imported ${r.imported}, updated ${r.updated}, skipped ${r.skipped}`;
-      if (r.blacklisted > 0) m += ` — ⚠️ ${r.blacklisted} not added (blacklisted domain): ${(r.blacklisted_emails || []).join(", ")}`;
+      const r = await uploadCSV(files);
+      const parts = (r.files as ImportFileResult[] || []).map((f) =>
+        f.error
+          ? `✗ ${f.filename}: ${f.error}`
+          : `${f.filename}: ${f.imported} imported, ${f.updated} updated, ${f.skipped} skipped${f.blacklisted ? `, ${f.blacklisted} blacklisted` : ""}`);
+      let m = parts.join(" · ");
+      if (r.blacklisted > 0) m += ` — ⚠️ blacklisted domains: ${(r.blacklisted_emails || []).join(", ")}`;
       setMsg(m); load();
-    } catch (e: any) { setMsg(e.message); }
+      if (history !== null) loadHistory();
+    } catch (e: any) { setMsg("✗ " + e.message); }
   };
   const remove = async (id: number) => { await api.del(`/leads/${id}`); load(); };
   const verify = async () => {
@@ -49,10 +60,31 @@ export default function Leads() {
         </div>
         <div className="row" style={{ marginTop: 12, alignItems: "center" }}>
           <button onClick={add}>Add</button>
-          <span className="muted">or import CSV (columns: email, first_name, last_name, company, title):</span>
-          <input type="file" accept=".csv" onChange={onFile} style={{ width: "auto" }} />
+          <span className="muted">or import CSV — select multiple files at once (columns: email, first_name, last_name, company, title):</span>
+          <input type="file" accept=".csv" multiple onChange={onFile} style={{ width: "auto" }} />
+          <button className="secondary" onClick={toggleHistory}>{history === null ? "Upload history" : "Hide history"}</button>
         </div>
         {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
+        {history !== null && (
+          <div style={{ marginTop: 10 }}>
+            <table>
+              <thead><tr><th>File</th><th>Imported</th><th>Updated</th><th>Skipped</th><th>Blacklisted</th><th>When</th></tr></thead>
+              <tbody>
+                {history.map((h) => (
+                  <tr key={h.id}>
+                    <td>{h.filename}</td>
+                    <td>{h.imported}</td>
+                    <td>{h.updated}</td>
+                    <td>{h.skipped}</td>
+                    <td>{h.blacklisted}</td>
+                    <td className="muted">{new Date(h.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+                {history.length === 0 && <tr><td colSpan={6} className="muted">No uploads yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card">
@@ -61,7 +93,7 @@ export default function Leads() {
           <button className="secondary" onClick={verify} title="Check deliverability via your verification provider (configure it in Settings)">Verify emails</button>
         </div>
         <table>
-          <thead><tr><th>Email</th><th>Verification</th><th>Status</th><th>Name</th><th>Company</th><th>Title</th><th></th></tr></thead>
+          <thead><tr><th>Email</th><th>Verification</th><th>Status</th><th>Name</th><th>Company</th><th>Title</th><th>Source file</th><th></th></tr></thead>
           <tbody>
             {leads.map((l) => (
               <tr key={l.id}>
@@ -73,10 +105,11 @@ export default function Leads() {
                 <td>{l.first_name} {l.last_name}</td>
                 <td>{l.company}</td>
                 <td>{l.title}</td>
+                <td className="muted" title="The upload this lead first arrived in">{l.source_file || "—"}</td>
                 <td><button className="danger" onClick={() => remove(l.id)}>×</button></td>
               </tr>
             ))}
-            {leads.length === 0 && <tr><td colSpan={7} className="muted">No leads yet.</td></tr>}
+            {leads.length === 0 && <tr><td colSpan={8} className="muted">No leads yet.</td></tr>}
           </tbody>
         </table>
       </div>
