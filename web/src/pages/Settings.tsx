@@ -160,6 +160,35 @@ export default function Settings() {
         </label>
         {msg && <p className="ok">{msg}</p>}
       </div>
+
+      <div className="card">
+        <h3>Newsletter (beehiiv)</h3>
+        <p className="muted">
+          When a reply is AI-classified as <b>interested</b>, the lead is automatically added to your
+          beehiiv newsletter. Grab both values from beehiiv → Settings → API (the publication ID starts
+          with <code>pub_</code>).
+        </p>
+        <label>beehiiv API key {existing["beehiiv_api_key"] && <span className="tag">set</span>}</label>
+        <div className="row">
+          <input
+            type="password"
+            value={vals["beehiiv_api_key"] || ""}
+            placeholder={existing["beehiiv_api_key"] ? "•••••••• (leave blank to keep)" : ""}
+            onChange={(e) => setVals({ ...vals, beehiiv_api_key: e.target.value })}
+          />
+          <button onClick={() => save("beehiiv_api_key", true)}>Save key</button>
+        </div>
+        <label style={{ marginTop: 10, display: "block" }}>Publication ID</label>
+        <div className="row">
+          <input
+            value={vals["beehiiv_publication_id"] || ""}
+            placeholder="pub_00000000-0000-0000-0000-000000000000"
+            onChange={(e) => setVals({ ...vals, beehiiv_publication_id: e.target.value })}
+          />
+          <button onClick={() => save("beehiiv_publication_id", false)}>Save</button>
+        </div>
+        {msg && <p className="ok">{msg}</p>}
+      </div>
     </div>
   );
 }

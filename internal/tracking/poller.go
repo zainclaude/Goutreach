@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/zainclaude/goutreach/internal/ai"
+	"github.com/zainclaude/goutreach/internal/beehiiv"
+	"github.com/zainclaude/goutreach/internal/crypto"
 	"github.com/zainclaude/goutreach/internal/mailauth"
 	"github.com/zainclaude/goutreach/internal/mailer"
 	"github.com/zainclaude/goutreach/internal/store"
@@ -21,13 +23,15 @@ type Poller struct {
 	st     *store.Store
 	res    *mailauth.Resolver
 	gen    *ai.Generator
+	cipher *crypto.Cipher
 	appURL string
 	log    *log.Logger
 }
 
-// NewPoller builds a reply/bounce poller. gen classifies inbound replies.
-func NewPoller(st *store.Store, res *mailauth.Resolver, gen *ai.Generator, appURL string, logger *log.Logger) *Poller {
-	return &Poller{st: st, res: res, gen: gen, appURL: appURL, log: logger}
+// NewPoller builds a reply/bounce poller. gen classifies inbound replies;
+// cipher decrypts stored integration secrets (beehiiv).
+func NewPoller(st *store.Store, res *mailauth.Resolver, gen *ai.Generator, cipher *crypto.Cipher, appURL string, logger *log.Logger) *Poller {
+	return &Poller{st: st, res: res, gen: gen, cipher: cipher, appURL: appURL, log: logger}
 }
 
 // Run polls all active accounts on an interval until the context is cancelled.
@@ -181,8 +185,35 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 			// Notify the user + team that there's a reply waiting (first detection only).
 			p.notifyReply(ctx, acc, in)
 		}
+		if category == "interested" {
+			p.subscribeInterested(ctx, acc.UserID, in.FromAddr)
+		}
 	}
 	return nil
+}
+
+// subscribeInterested adds an interested replier to the user's beehiiv
+// newsletter. No-op unless a beehiiv API key + publication ID are configured
+// in Settings; failures are logged, never fatal.
+func (p *Poller) subscribeInterested(ctx context.Context, userID int64, email string) {
+	pubID, ok, _ := p.st.GetSetting(ctx, userID, "beehiiv_publication_id")
+	if !ok || strings.TrimSpace(pubID) == "" {
+		return
+	}
+	enc, ok, _ := p.st.GetSetting(ctx, userID, "beehiiv_api_key")
+	if !ok || enc == "" || p.cipher == nil {
+		return
+	}
+	apiKey, err := p.cipher.Decrypt(enc)
+	if err != nil {
+		p.log.Printf("beehiiv: decrypt api key: %v", err)
+		return
+	}
+	if err := beehiiv.Subscribe(ctx, apiKey, pubID, email); err != nil {
+		p.log.Printf("beehiiv: subscribe %s failed: %v", email, err)
+		return
+	}
+	p.log.Printf("beehiiv: added interested lead %s to the newsletter", email)
 }
 
 // notifyReply emails the user's configured notification addresses that a lead

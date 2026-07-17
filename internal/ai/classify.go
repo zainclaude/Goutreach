@@ -18,13 +18,13 @@ var replyCategories = map[string]bool{
 const classifySystem = `You classify replies to cold outreach emails. Respond with ONLY a JSON object: {"category":"<one>"}.
 
 Categories:
-- "interested": positive engagement — wants to learn more, asks questions about the offer or pricing, suggests a call, or refers you to the right person.
+- "interested": a HUMAN engages with the offer itself — wants to learn more, asks questions about the offer or pricing, suggests a call, or personally refers you to the right person for THIS offer.
 - "not_interested": explicitly declines or says it's not a fit (but doesn't demand removal).
-- "ooo": automated out-of-office, vacation, or auto-acknowledgement replies.
+- "ooo": ANY automated or templated reply — out-of-office, vacation, auto-acknowledgements, and announcements like "I've changed roles/companies", "you can now reach me at my new email", "I'm no longer with X", or "your message has been received". These are broadcast to every sender; boilerplate courtesy phrases in them ("feel free to reach out!", "don't hesitate to contact me", "still happy to collaborate") do NOT make them interested.
 - "unsubscribe": asks to be removed, to stop emailing, or threatens spam complaints/legal action.
 - "other": anything else (unclear, neutral, wrong person with no referral).
 
-When in doubt between interested and other, prefer "interested" so a warm lead is never missed.`
+First decide: is this an automated/templated reply or a human who read the email? Automated replies are never "interested" no matter how friendly their wording. Only when a genuine human response is ambiguous between interested and other, prefer "interested" so a warm lead is never missed.`
 
 var categoryRe = regexp.MustCompile(`\{[^{}]*"category"[^{}]*\}`)
 
