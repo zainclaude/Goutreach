@@ -37,6 +37,7 @@ type CampaignStats struct {
 	Opens      int   `json:"opens"`
 	Clicks     int   `json:"clicks"`
 	Replies    int   `json:"replies"`
+	Interested int   `json:"interested"` // replies AI-classified as interested
 	Bounces    int   `json:"bounces"`
 }
 
@@ -81,7 +82,17 @@ func (s *Store) CampaignStatsFor(ctx context.Context, campaignID int64) (Campaig
 			cs.Bounces = n
 		}
 	}
-	return cs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return cs, err
+	}
+	err = s.pool.QueryRow(ctx,
+		`SELECT count(DISTINCT m.id)
+		 FROM events e
+		 JOIN messages m ON m.id = e.message_id
+		 JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
+		 WHERE cl.campaign_id=$1 AND e.type='reply' AND m.reply_category='interested'`,
+		campaignID).Scan(&cs.Interested)
+	return cs, err
 }
 
 // OverviewStats aggregates totals across all of a user's campaigns. A non-nil
@@ -128,7 +139,19 @@ func (s *Store) OverviewStats(ctx context.Context, userID int64, since *time.Tim
 			cs.Bounces = n
 		}
 	}
-	return cs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return cs, err
+	}
+	err = s.pool.QueryRow(ctx,
+		`SELECT count(DISTINCT m.id)
+		 FROM events e
+		 JOIN messages m ON m.id = e.message_id
+		 JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
+		 JOIN campaigns c ON c.id = cl.campaign_id
+		 WHERE c.user_id=$1 AND e.type='reply' AND m.reply_category='interested'
+		   AND ($2::timestamptz IS NULL OR e.created_at >= $2)`,
+		userID, since).Scan(&cs.Interested)
+	return cs, err
 }
 
 // DeleteReplyEvents removes reply events recorded for a message. Used when a

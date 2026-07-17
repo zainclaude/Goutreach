@@ -111,7 +111,8 @@ export interface SendStatus {
     bounced: number; next_send_at: string | null };
 }
 export interface Stats {
-  sent: number; opens: number; clicks: number; replies: number; bounces: number;
+  sent: number; opens: number; clicks: number; replies: number;
+  interested: number; bounces: number;
 }
 export interface Domain {
   id: number; domain: string; registrar: string; status: string;

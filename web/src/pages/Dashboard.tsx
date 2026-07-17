@@ -48,6 +48,7 @@ export default function Dashboard() {
         <div className="kpi"><div className="v">{stats?.sent ?? 0}</div><div className="l">Emails sent · {RANGES.find((r) => r.value === range)?.label}</div></div>
         <div className="kpi"><div className="v">{stats?.opens ?? 0}</div><div className="l">Opens ({rate(stats?.opens ?? 0)})</div></div>
         <div className="kpi"><div className="v">{stats?.replies ?? 0}</div><div className="l">Replies ({rate(stats?.replies ?? 0)})</div></div>
+        <div className="kpi"><div className="v">{stats?.interested ?? 0}</div><div className="l">Interested ({rate(stats?.interested ?? 0)})</div></div>
         <div className="kpi"><div className="v">{stats?.clicks ?? 0}</div><div className="l">Clicks</div></div>
         <div className="kpi"><div className="v">{stats?.bounces ?? 0}</div><div className="l">Bounces</div></div>
       </div>
