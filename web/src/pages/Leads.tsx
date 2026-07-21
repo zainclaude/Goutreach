@@ -94,6 +94,7 @@ export default function Leads() {
             <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>
               {" "}· {leads.filter((l) => !l.contacted).length} uncontacted
               {" "}· {leads.filter((l) => !["valid", "invalid", "risky", "catch_all"].includes(l.verification_status)).length} unverified
+              {" "}· {leads.filter((l) => !l.enrolled).length} not in any campaign
             </span>
           </h3>
           <button className="secondary" onClick={verify} title="Check deliverability via your verification provider (configure it in Settings)">Verify emails</button>

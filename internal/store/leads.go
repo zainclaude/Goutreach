@@ -19,6 +19,7 @@ type Lead struct {
 	Status       string          `json:"status"`
 	CreatedAt    time.Time       `json:"created_at"`
 	Contacted    bool            `json:"contacted"`           // has ever had an email actually sent
+	Enrolled     bool            `json:"enrolled"`            // is in at least one campaign
 	Verification string          `json:"verification_status"` // unknown|valid|invalid|risky|catch_all
 	VerifiedAt   *time.Time      `json:"verified_at"`
 	ImportID     *int64          `json:"import_id,omitempty"` // upload the lead first arrived in
@@ -99,6 +100,7 @@ func (s *Store) UpsertLead(ctx context.Context, l Lead) (Lead, bool, error) {
 func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 	rows, err := s.pool.Query(ctx,
 		`SELECT `+leadCols+`, `+contactedExpr+` AS contacted,
+		        EXISTS(SELECT 1 FROM campaign_leads cl WHERE cl.lead_id = leads.id) AS enrolled,
 		        COALESCE((SELECT li.filename FROM lead_imports li WHERE li.id = leads.import_id), '')
 		 FROM leads WHERE user_id=$1 ORDER BY id DESC`, userID)
 	if err != nil {
@@ -110,7 +112,7 @@ func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 		var l Lead
 		if err := rows.Scan(&l.ID, &l.UserID, &l.Email, &l.FirstName, &l.LastName, &l.Company,
 			&l.Title, &l.CustomFields, &l.Status, &l.CreatedAt, &l.Verification, &l.VerifiedAt,
-			&l.Contacted, &l.SourceFile); err != nil {
+			&l.Contacted, &l.Enrolled, &l.SourceFile); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
