@@ -62,6 +62,13 @@ func (a *accountReq) applyDefaults() {
 			a.IMAPPassword = a.Password
 		}
 	}
+	// Google shows app passwords as "xxxx xxxx xxxx xxxx" — pasted spaces make
+	// SMTP AUTH fail with 535 BadCredentials. App passwords never contain
+	// spaces, so strip them for Google accounts.
+	if strings.Contains(strings.ToLower(a.SMTPHost), "gmail") || strings.EqualFold(a.Provider, "google") {
+		a.SMTPPassword = strings.ReplaceAll(strings.TrimSpace(a.SMTPPassword), " ", "")
+		a.IMAPPassword = strings.ReplaceAll(strings.TrimSpace(a.IMAPPassword), " ", "")
+	}
 	if a.SMTPPort == 0 {
 		a.SMTPPort = 587
 	}
