@@ -89,7 +89,12 @@ export default function Leads() {
 
       <div className="card">
         <div className="flex-between">
-          <h3>All leads ({leads.length})</h3>
+          <h3>
+            All leads ({leads.length})
+            <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>
+              {" "}· {leads.filter((l) => !l.contacted).length} uncontacted
+            </span>
+          </h3>
           <button className="secondary" onClick={verify} title="Check deliverability via your verification provider (configure it in Settings)">Verify emails</button>
         </div>
         <table>
