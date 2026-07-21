@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -122,6 +123,20 @@ func (s *Server) handleUpdateCampaignStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.st.SetCampaignStatus(r.Context(), s.userID(r), idParam(r), req.Status); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleDeleteCampaign deletes a campaign with all its enrollments, generated
+// messages, and stats. Already-sent mail is unaffected; leads stay in the pool.
+func (s *Server) handleDeleteCampaign(w http.ResponseWriter, r *http.Request) {
+	if err := s.st.DeleteCampaign(r.Context(), s.userID(r), idParam(r)); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "not found")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

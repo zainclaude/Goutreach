@@ -23,17 +23,18 @@ type Message struct {
 	ResearchNotes  string     `json:"research_notes"`
 	Approved       bool       `json:"approved"`
 	SentAt         *time.Time `json:"sent_at"`
+	UserRepliedAt  *time.Time `json:"user_replied_at"` // when the user manually replied in this thread
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
 const messageCols = `id, campaign_lead_id, step_index, account_id, subject, body, message_id,
-	in_reply_to, references_hdr, status, error, template_used, research_notes, approved, sent_at, created_at`
+	in_reply_to, references_hdr, status, error, template_used, research_notes, approved, sent_at, user_replied_at, created_at`
 
 func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	var m Message
 	err := row.Scan(&m.ID, &m.CampaignLeadID, &m.StepIndex, &m.AccountID, &m.Subject, &m.Body,
 		&m.MessageID, &m.InReplyTo, &m.References, &m.Status, &m.Error,
-		&m.TemplateUsed, &m.ResearchNotes, &m.Approved, &m.SentAt, &m.CreatedAt)
+		&m.TemplateUsed, &m.ResearchNotes, &m.Approved, &m.SentAt, &m.UserRepliedAt, &m.CreatedAt)
 	return m, err
 }
 
@@ -89,7 +90,7 @@ func (s *Store) ListMessagesForCampaign(ctx context.Context, userID, campaignID 
 		var mw MessageWithLead
 		err := rows.Scan(&mw.ID, &mw.CampaignLeadID, &mw.StepIndex, &mw.AccountID, &mw.Subject,
 			&mw.Body, &mw.MessageID, &mw.InReplyTo, &mw.References, &mw.Status, &mw.Error,
-			&mw.TemplateUsed, &mw.ResearchNotes, &mw.Approved, &mw.SentAt, &mw.CreatedAt,
+			&mw.TemplateUsed, &mw.ResearchNotes, &mw.Approved, &mw.SentAt, &mw.UserRepliedAt, &mw.CreatedAt,
 			&mw.LeadEmail, &mw.LeadCompany)
 		if err != nil {
 			return nil, err
@@ -139,6 +140,13 @@ func (s *Store) UpdateMessageContent(ctx context.Context, id int64, subject, bod
 // DeleteMessage removes a message (used to reject a preview).
 func (s *Store) DeleteMessage(ctx context.Context, id int64) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM messages WHERE id=$1 AND status NOT IN ('sent','replied')`, id)
+	return err
+}
+
+// SetMessageUserReplied records that the user manually replied in this thread,
+// which arms per-reply notifications for the rest of the conversation.
+func (s *Store) SetMessageUserReplied(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE messages SET user_replied_at=now() WHERE id=$1`, id)
 	return err
 }
 

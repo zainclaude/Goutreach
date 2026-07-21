@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// errNotFound is returned when a scoped update affects no rows.
-var errNotFound = errors.New("not found")
+// ErrNotFound is returned when a scoped update affects no rows.
+var ErrNotFound = errors.New("not found")
 
 // Campaign is an outreach effort.
 type Campaign struct {
@@ -115,6 +115,20 @@ func (s *Store) SetCampaignStatus(ctx context.Context, userID, id int64, status 
 	_, err := s.pool.Exec(ctx,
 		`UPDATE campaigns SET status=$3 WHERE id=$1 AND user_id=$2`, id, userID, status)
 	return err
+}
+
+// DeleteCampaign removes a campaign and (via FK cascades) its steps, account
+// pool, enrollments, messages, and events. Leads themselves are untouched.
+func (s *Store) DeleteCampaign(ctx context.Context, userID, id int64) error {
+	ct, err := s.pool.Exec(ctx,
+		`DELETE FROM campaigns WHERE id=$1 AND user_id=$2`, id, userID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // CompleteFinishedCampaigns marks every running campaign "completed" once all of
@@ -391,7 +405,7 @@ func (s *Store) LaunchCampaign(ctx context.Context, userID, id int64) error {
 		return err
 	}
 	if ct.RowsAffected() == 0 {
-		return errNotFound
+		return ErrNotFound
 	}
 	if _, err := tx.Exec(ctx,
 		`UPDATE messages SET approved=true

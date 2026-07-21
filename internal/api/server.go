@@ -125,6 +125,7 @@ func (s *Server) Router() http.Handler {
 			r.Post("/", s.handleCreateCampaign)
 			r.Get("/{id}", s.handleGetCampaign)
 			r.Patch("/{id}", s.handleUpdateCampaignStatus)
+			r.Delete("/{id}", s.handleDeleteCampaign)
 			r.Put("/{id}/steps", s.handleSetSteps)
 			r.Put("/{id}/accounts", s.handleSetCampaignAccounts)
 			r.Get("/{id}/leads", s.handleCampaignLeads)

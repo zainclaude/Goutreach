@@ -158,36 +158,50 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 	if in.Text != "" {
 		_ = p.st.SetReplyBody(ctx, msg.ID, in.Text)
 	}
-	if msg.Status != "replied" {
-		_ = p.st.SetMessageStatus(ctx, msg.ID, "replied")
-		_ = p.st.CreateEvent(ctx, msg.ID, "reply", map[string]any{
-			"from":    in.FromAddr,
-			"subject": in.Subject,
-		})
-		if cl, err := p.st.GetCampaignLead(ctx, msg.CampaignLeadID); err == nil {
-			// Stop the sequence for a lead that replied.
-			_ = p.st.SetCampaignLeadStatus(ctx, cl.ID, "replied")
+	if msg.Status == "replied" {
+		// Follow-up reply on a thread we already know about. If the user has
+		// manually replied in this thread (a live conversation — e.g. booking a
+		// call), alert them on every inbound reply, unclassified: at this stage
+		// nothing from the lead is safe to drop.
+		if msg.UserRepliedAt != nil {
+			_ = p.st.CreateEvent(ctx, msg.ID, "reply", map[string]any{
+				"from":     in.FromAddr,
+				"subject":  in.Subject,
+				"followup": true,
+			})
+			p.notifyReply(ctx, acc, in, true)
 		}
-		// Classify the reply so OOO/unsubscribe noise is filtered and only
-		// genuinely interested replies trigger a notification. If the classifier
-		// is unavailable, fail open and notify — never silently drop a warm lead.
-		category := ""
-		if p.gen != nil {
-			if cat, err := p.gen.ClassifyReply(ctx, in.Subject, in.Text); err == nil {
-				category = cat
-				_ = p.st.SetReplyCategory(ctx, msg.ID, cat)
-				p.log.Printf("poller: reply from %s classified as %s", in.FromAddr, cat)
-			} else {
-				p.log.Printf("poller: reply classification failed (%v) — notifying anyway", err)
-			}
+		return nil
+	}
+
+	_ = p.st.SetMessageStatus(ctx, msg.ID, "replied")
+	_ = p.st.CreateEvent(ctx, msg.ID, "reply", map[string]any{
+		"from":    in.FromAddr,
+		"subject": in.Subject,
+	})
+	if cl, err := p.st.GetCampaignLead(ctx, msg.CampaignLeadID); err == nil {
+		// Stop the sequence for a lead that replied.
+		_ = p.st.SetCampaignLeadStatus(ctx, cl.ID, "replied")
+	}
+	// Classify the reply so OOO/unsubscribe noise is filtered and only
+	// genuinely interested replies trigger a notification. If the classifier
+	// is unavailable, fail open and notify — never silently drop a warm lead.
+	category := ""
+	if p.gen != nil {
+		if cat, err := p.gen.ClassifyReply(ctx, in.Subject, in.Text); err == nil {
+			category = cat
+			_ = p.st.SetReplyCategory(ctx, msg.ID, cat)
+			p.log.Printf("poller: reply from %s classified as %s", in.FromAddr, cat)
+		} else {
+			p.log.Printf("poller: reply classification failed (%v) — notifying anyway", err)
 		}
-		if category == "interested" || category == "" {
-			// Notify the user + team that there's a reply waiting (first detection only).
-			p.notifyReply(ctx, acc, in)
-		}
-		if category == "interested" {
-			p.subscribeInterested(ctx, acc.UserID, in.FromAddr)
-		}
+	}
+	if category == "interested" || category == "" {
+		// Notify the user + team that there's a reply waiting (first detection only).
+		p.notifyReply(ctx, acc, in, false)
+	}
+	if category == "interested" {
+		p.subscribeInterested(ctx, acc.UserID, in.FromAddr)
 	}
 	return nil
 }
@@ -218,7 +232,9 @@ func (p *Poller) subscribeInterested(ctx context.Context, userID int64, email st
 
 // notifyReply emails the user's configured notification addresses that a lead
 // replied, so they can respond in PipelineBuilder. No-op if none are configured.
-func (p *Poller) notifyReply(ctx context.Context, acc store.EmailAccount, in mailer.InboundMessage) {
+// followUp marks a reply in a thread the user already replied to themselves —
+// an active conversation that likely needs a booking, so the alert says so.
+func (p *Poller) notifyReply(ctx context.Context, acc store.EmailAccount, in mailer.InboundMessage, followUp bool) {
 	raw, ok, _ := p.st.GetSetting(ctx, acc.UserID, "notification_emails")
 	if !ok || strings.TrimSpace(raw) == "" {
 		return
@@ -247,9 +263,14 @@ func (p *Poller) notifyReply(ctx context.Context, acc store.EmailAccount, in mai
 	if p.appURL != "" {
 		linkLine = "\nReply here: " + strings.TrimRight(p.appURL, "/") + "/inbox\n"
 	}
-	body := fmt.Sprintf("You have a new reply in PipelineBuilder.\n\nFrom: %s\nSubject: %s\nInbox: %s\n\n%s\n%s",
-		in.FromAddr, in.Subject, acc.Email, preview, linkLine)
+	headline := "You have a new reply in PipelineBuilder."
 	subject := fmt.Sprintf("New reply from %s — respond in PipelineBuilder", in.FromAddr)
+	if followUp {
+		headline = "A lead you're in conversation with replied again — don't leave them waiting."
+		subject = fmt.Sprintf("%s replied again — keep the conversation going", in.FromAddr)
+	}
+	body := fmt.Sprintf("%s\n\nFrom: %s\nSubject: %s\nInbox: %s\n\n%s\n%s",
+		headline, in.FromAddr, in.Subject, acc.Email, preview, linkLine)
 	if _, err := mailer.Send(ctx, creds, mailer.OutgoingEmail{
 		FromAddr: acc.Email,
 		FromName: "PipelineBuilder",

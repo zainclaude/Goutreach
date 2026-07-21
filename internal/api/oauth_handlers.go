@@ -83,6 +83,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		IMAPPort:             993,
 		IMAPUsername:         email,
 		DailyLimit:           30,
+		WarmupEnabled:        true,
 		WarmupTargetPerDay:   20,
 		AuthType:             "oauth",
 		OAuthRefreshTokenEnc: refreshEnc,

@@ -27,6 +27,11 @@ export default function Campaigns() {
     try { const c = await api.post<Campaign>("/campaigns", form); nav(`/campaigns/${c.id}`); }
     catch (e: any) { setErr(e.message); }
   };
+  const remove = async (c: Campaign) => {
+    if (!confirm(`Delete campaign "${c.name}"? Its enrollments, drafts, and stats are removed. Leads stay in your lead list.`)) return;
+    try { await api.del(`/campaigns/${c.id}`); load(); }
+    catch (e: any) { setErr(e.message); }
+  };
 
   return (
     <div>
@@ -77,16 +82,17 @@ export default function Campaigns() {
       <div className="card">
         <h3>All campaigns</h3>
         <table>
-          <thead><tr><th>Name</th><th>Status</th><th>Approval</th></tr></thead>
+          <thead><tr><th>Name</th><th>Status</th><th>Approval</th><th></th></tr></thead>
           <tbody>
             {list.map((c) => (
               <tr key={c.id}>
                 <td><a href={`/campaigns/${c.id}`}>{c.name}</a></td>
                 <td><span className={`badge ${c.status}`}>{c.status}</span></td>
                 <td>{c.require_approval ? `preview ${c.approval_count}` : "off"}</td>
+                <td><button className="danger" title="Delete campaign" onClick={() => remove(c)}>×</button></td>
               </tr>
             ))}
-            {list.length === 0 && <tr><td colSpan={3} className="muted">No campaigns yet.</td></tr>}
+            {list.length === 0 && <tr><td colSpan={4} className="muted">No campaigns yet.</td></tr>}
           </tbody>
         </table>
       </div>

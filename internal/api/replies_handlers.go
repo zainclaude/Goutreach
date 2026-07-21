@@ -116,6 +116,11 @@ func (s *Server) handleSendReply(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "send failed: "+err.Error())
 		return
 	}
+	// The conversation is now live — from here on, every inbound reply in this
+	// thread triggers a notification email so a booking never slips by.
+	if err := s.st.SetMessageUserReplied(r.Context(), msg.ID); err != nil {
+		s.log.Printf("reply: mark user-replied msg %d: %v", msg.ID, err)
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

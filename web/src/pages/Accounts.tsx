@@ -5,7 +5,7 @@ const blank = {
   provider: "gmail", email: "", from_name: "", password: "",
   smtp_host: "", smtp_port: 587, smtp_username: "", smtp_password: "",
   imap_host: "", imap_port: 993, imap_username: "", imap_password: "",
-  daily_limit: 30, warmup_enabled: false, warmup_target_per_day: 20,
+  daily_limit: 30, warmup_enabled: true, warmup_target_per_day: 20,
   skip_verify: false,
 };
 
@@ -110,8 +110,11 @@ export default function Accounts() {
                   <td>{s?.replies_lifetime ?? 0}</td>
                   <td>{s ? (s.reply_rate * 100).toFixed(1) + "%" : "—"}</td>
                   <td>
-                    <input type="checkbox" style={{ width: "auto" }} defaultChecked={a.warmup_enabled}
-                      onChange={(e) => saveSettings(a, a.daily_limit, e.target.checked, a.warmup_target_per_day)} />
+                    <span className={a.warmup_enabled ? "badge active" : "badge"}>{a.warmup_enabled ? "on" : "off"}</span>{" "}
+                    <button className="secondary" style={{ padding: "2px 8px", fontSize: 12 }}
+                      onClick={() => saveSettings(a, a.daily_limit, !a.warmup_enabled, a.warmup_target_per_day)}>
+                      {a.warmup_enabled ? "Turn off" : "Turn on"}
+                    </button>
                   </td>
                   <td><PollHealth account={a} /></td>
                   <td>
