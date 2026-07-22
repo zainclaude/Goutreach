@@ -156,6 +156,33 @@ func (s *Store) SetMessageStatus(ctx context.Context, id int64, status string) e
 	return err
 }
 
+// ListStuckQueuedMessages returns queued messages in NON-running campaigns
+// created before cutoff. These are generations orphaned by a restart: preview
+// generation runs in-process and dies with a deploy, and the sender only ever
+// regenerates messages in running campaigns — so nothing would retry these.
+func (s *Store) ListStuckQueuedMessages(ctx context.Context, cutoff time.Time, limit int) ([]Message, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+prefixCols("m", messageCols)+`
+		 FROM messages m
+		 JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
+		 JOIN campaigns c ON c.id = cl.campaign_id
+		 WHERE m.status='queued' AND c.status <> 'running' AND m.created_at < $1
+		 ORDER BY m.id LIMIT $2`, cutoff, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // GetMessage returns one message by id.
 func (s *Store) GetMessage(ctx context.Context, id int64) (Message, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+messageCols+` FROM messages WHERE id=$1`, id)

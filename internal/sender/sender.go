@@ -32,6 +32,7 @@ func New(st *store.Store, res *mailauth.Resolver, gen *ai.Generator, appURL stri
 
 // Run starts the scheduler loop until the context is cancelled.
 func (s *Service) Run(ctx context.Context) {
+	go s.runRecovery(ctx)
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
 	s.tick(ctx)
@@ -42,6 +43,56 @@ func (s *Service) Run(ctx context.Context) {
 		case <-ticker.C:
 			s.tick(ctx)
 		}
+	}
+}
+
+// runRecovery periodically resumes preview generations that a restart killed
+// mid-run. Preview generation is an in-process goroutine, so a deploy leaves
+// its message stuck in 'queued' with nothing retrying it (the sender only
+// regenerates messages in running campaigns). The 10-minute age cutoff exceeds
+// the 6-minute preview timeout, so a live generation is never double-run.
+func (s *Service) runRecovery(ctx context.Context) {
+	const cutoffAge = 10 * time.Minute
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	// First pass shortly after boot — that's when deploy-orphaned work exists.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(30 * time.Second):
+	}
+	for {
+		s.recoverStuck(ctx, cutoffAge)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Service) recoverStuck(ctx context.Context, cutoffAge time.Duration) {
+	msgs, err := s.st.ListStuckQueuedMessages(ctx, time.Now().Add(-cutoffAge), 10)
+	if err != nil {
+		s.log.Printf("sender: stuck-generation query: %v", err)
+		return
+	}
+	for _, m := range msgs {
+		cl, err := s.st.GetCampaignLead(ctx, m.CampaignLeadID)
+		if err != nil {
+			continue
+		}
+		campaign, err := s.st.GetCampaignByID(ctx, cl.CampaignID)
+		if err != nil {
+			continue
+		}
+		s.log.Printf("sender: recovering stuck generation — msg %d (campaign %d, lead %d, step %d)",
+			m.ID, campaign.ID, cl.LeadID, m.StepIndex)
+		genCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+		if _, err := s.GeneratePreview(genCtx, campaign, cl, m.StepIndex); err != nil {
+			s.log.Printf("sender: recover msg %d: %v", m.ID, err)
+		}
+		cancel()
 	}
 }
 
