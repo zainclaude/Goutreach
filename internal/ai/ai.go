@@ -175,7 +175,13 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 		Tools: tools,
 	}
 
-	const maxIters = 14
+	// Claude's server-side web search runs many searches inside one iteration;
+	// a client-side search tool (Kimi) burns one iteration per round-trip, so
+	// it needs more room to walk the same decision tree.
+	maxIters := 14
+	if run.serperKey != "" {
+		maxIters = 24
+	}
 	for i := 0; i < maxIters; i++ {
 		resp, err := run.client.Messages.New(ctx, params)
 		if err != nil {
@@ -196,6 +202,14 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 			if len(results) == 0 {
 				// No custom tool to run but model stopped on tool_use — resend.
 				continue
+			}
+			// Nearing the cap: tell the model to stop researching and finalize,
+			// so runs converge with fallbacks instead of dying at the limit.
+			if i >= maxIters-4 {
+				results = append(results, anthropic.NewTextBlock(
+					"NOTE: You are almost out of research turns. Do not call any more tools. "+
+						"Finalize now: pick the template supported by what you have verified so far, "+
+						"apply the fallback rules for anything unverified, and output ONLY the final JSON object."))
 			}
 			params.Messages = append(params.Messages, anthropic.NewUserMessage(results...))
 			continue

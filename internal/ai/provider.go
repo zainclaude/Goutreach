@@ -181,7 +181,7 @@ func VerifyKimiKey(ctx context.Context, apiKey, model string) (reply, usedModel 
 func clientWebSearchTool() anthropic.ToolUnionParam {
 	return anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{
 		Name:        "web_search",
-		Description: anthropic.String("Search the web (Google). Returns the top results as 'title / URL / snippet' lines. Use it for all brand research steps in the decision tree."),
+		Description: anthropic.String("Search the web (Google). Returns the top results as 'title / URL / snippet' lines. Use it for all brand research steps in the decision tree. Research turns are limited, so batch your work: request SEVERAL web_search calls in the same turn (they run in parallel) instead of one search per turn, and avoid re-running near-duplicate queries."),
 		InputSchema: anthropic.ToolInputSchemaParam{
 			Properties: map[string]any{
 				"query": map[string]any{
