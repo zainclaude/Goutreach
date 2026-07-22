@@ -2,9 +2,14 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -102,6 +107,46 @@ func (g *Generator) providerFor(ctx context.Context, in Input) (providerRun, err
 		model:     anthropic.Model(model),
 		serperKey: serperKey,
 	}, nil
+}
+
+// kimiModelsURL is Moonshot's OpenAI-compatible model listing endpoint — the
+// Anthropic-compatible surface has no models endpoint, so valid model IDs for
+// a given key can only be discovered here.
+const kimiModelsURL = "https://api.moonshot.ai/v1/models"
+
+// ListKimiModels returns the model IDs the given Moonshot API key can use.
+func ListKimiModels(ctx context.Context, apiKey string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, kimiModelsURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d: %.200s", resp.StatusCode, string(body))
+	}
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("parse models list: %w", err)
+	}
+	models := make([]string, 0, len(out.Data))
+	for _, m := range out.Data {
+		if m.ID != "" {
+			models = append(models, m.ID)
+		}
+	}
+	sort.Strings(models)
+	return models, nil
 }
 
 // VerifyKimiKey makes a minimal live request against Moonshot's

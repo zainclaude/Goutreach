@@ -165,6 +165,18 @@ export default function Settings() {
           <button
             className="secondary"
             onClick={async () => {
+              setMsg("Fetching models your Moonshot key can use…");
+              try {
+                const r = await api.get<{ ok: boolean; models: string[] }>("/ai/kimi/models");
+                setMsg(`✓ Models available to your key: ${r.models.join(", ")} — paste one into the Kimi model field.`);
+              } catch (e: any) { setMsg("✗ " + e.message); }
+            }}
+          >
+            List Kimi models
+          </button>
+          <button
+            className="secondary"
+            onClick={async () => {
               setMsg("Testing Serper key (runs one real search)…");
               try {
                 const r = await api.get<{ ok: boolean; sample: string }>("/ai/serper/ping");

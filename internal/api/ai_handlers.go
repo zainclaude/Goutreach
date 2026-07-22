@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -34,10 +35,34 @@ func (s *Server) handleKimiPing(w http.ResponseWriter, r *http.Request) {
 	model, _, _ := s.st.GetSetting(r.Context(), s.userID(r), ai.SettingKimiModel)
 	reply, usedModel, err := ai.VerifyKimiKey(r.Context(), key, model)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "Moonshot rejected the request: "+err.Error())
+		errMsg := "Moonshot rejected the request: " + err.Error()
+		// A model-not-found means the key itself works — list the model IDs the
+		// key can actually use so the right one can be picked from Settings.
+		if strings.Contains(err.Error(), "resource_not_found") || strings.Contains(err.Error(), "Not found the model") {
+			if models, mErr := ai.ListKimiModels(r.Context(), key); mErr == nil && len(models) > 0 {
+				errMsg = fmt.Sprintf("Your key works, but model %q doesn't exist on Moonshot. Models your key can use: %s — paste one into the Kimi model field and re-test.",
+					usedModel, strings.Join(models, ", "))
+			}
+		}
+		writeErr(w, http.StatusBadGateway, errMsg)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "model": usedModel, "reply": reply})
+}
+
+// handleKimiModels lists the model IDs the stored Moonshot key has access to.
+func (s *Server) handleKimiModels(w http.ResponseWriter, r *http.Request) {
+	key, code, msg := s.aiSecret(r, ai.SettingKimiAPIKey)
+	if code != 0 {
+		writeErr(w, code, msg)
+		return
+	}
+	models, err := ai.ListKimiModels(r.Context(), key)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "Moonshot models list failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": models})
 }
 
 // handleSerperPing verifies the stored Serper.dev key with a real (1-credit)
