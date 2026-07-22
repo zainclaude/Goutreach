@@ -92,6 +92,67 @@ export default function Settings() {
       </div>
 
       <div className="card">
+        <h3>AI generation model</h3>
+        <p className="muted">
+          Which model researches brands and writes your emails. <b>Claude Sonnet 5</b> is the default
+          (uses the server's Anthropic key, built-in web search). <b>Kimi K2.5</b> (Moonshot) is the
+          cheaper open-source alternative — it needs a Moonshot API key (platform.moonshot.ai → API keys)
+          plus a <b>Serper.dev</b> key for web research, since Kimi has no built-in search.
+          Reply classification always uses Claude. Kimi-generated emails are tagged <code>[kimi]</code> in
+          their research notes so you can compare quality when A/B testing.
+        </p>
+        <label>Provider</label>
+        <select
+          value={vals["ai_provider"] || "claude"}
+          onChange={async (e) => {
+            const v = e.target.value;
+            setVals({ ...vals, ai_provider: v });
+            await api.put("/settings", { key: "ai_provider", value: v, is_secret: false });
+            setMsg(v === "kimi"
+              ? "Saved — new emails will be generated with Kimi (make sure both keys below are set)"
+              : "Saved — new emails will be generated with Claude");
+          }}
+        >
+          <option value="claude">Claude Sonnet 5 (default)</option>
+          <option value="kimi">Kimi K2.5 (Moonshot)</option>
+        </select>
+        <label style={{ marginTop: 10, display: "block" }}>
+          Kimi (Moonshot) API key {existing["kimi_api_key"] && <span className="tag">set</span>}
+        </label>
+        <div className="row">
+          <input
+            type="password"
+            value={vals["kimi_api_key"] || ""}
+            placeholder={existing["kimi_api_key"] ? "•••••••• (leave blank to keep)" : "sk-..."}
+            onChange={(e) => setVals({ ...vals, kimi_api_key: e.target.value })}
+          />
+          <button onClick={() => save("kimi_api_key", true)}>Save key</button>
+        </div>
+        <label style={{ marginTop: 10, display: "block" }}>Kimi model</label>
+        <div className="row">
+          <input
+            value={vals["kimi_model"] || ""}
+            placeholder="kimi-k2.5 (default)"
+            onChange={(e) => setVals({ ...vals, kimi_model: e.target.value })}
+          />
+          <button onClick={() => save("kimi_model", false)}>Save</button>
+        </div>
+        <label style={{ marginTop: 10, display: "block" }}>
+          Serper.dev API key (web search for Kimi) {existing["serper_api_key"] && <span className="tag">set</span>}
+        </label>
+        <div className="row">
+          <input
+            type="password"
+            value={vals["serper_api_key"] || ""}
+            placeholder={existing["serper_api_key"] ? "•••••••• (leave blank to keep)" : ""}
+            onChange={(e) => setVals({ ...vals, serper_api_key: e.target.value })}
+          />
+          <button onClick={() => save("serper_api_key", true)}>Save key</button>
+        </div>
+        {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
+      </div>
+
+      <div className="card">
         <h3>Blacklist (never email)</h3>
         <p className="muted">
           One domain per line (or comma-separated). Leads on these domains are blocked when importing/adding,

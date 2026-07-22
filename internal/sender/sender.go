@@ -208,18 +208,24 @@ func (s *Service) ensureGenerated(ctx context.Context, campaign store.Campaign, 
 		return store.Message{}, fmt.Errorf("templates: %w", err)
 	}
 
+	provider, _, _ := s.st.GetSetting(ctx, campaign.UserID, ai.SettingAIProvider)
 	res, err := s.gen.Generate(ctx, ai.Input{
 		Brief:     campaign.Brief,
 		Angle:     step.Angle,
 		Lead:      lead,
 		Templates: templates,
 		FromName:  fromName,
+		Provider:  provider,
 	})
 	if err != nil {
 		_ = s.st.SetMessageFailed(ctx, msg.ID, err.Error())
 		return store.Message{}, fmt.Errorf("generate: %w", err)
 	}
 	notes := fmt.Sprintf("template %s: %s", res.TemplateUsed, res.Reasoning)
+	if res.Provider != "" && res.Provider != "claude" {
+		// Tag non-default providers so A/B comparisons can tell emails apart.
+		notes = "[" + res.Provider + "] " + notes
+	}
 	if err := s.st.SetMessageGenerated(ctx, msg.ID, res.Subject, res.Body, res.TemplateUsed, notes); err != nil {
 		return store.Message{}, err
 	}

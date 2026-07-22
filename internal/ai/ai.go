@@ -15,16 +15,22 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
+	"github.com/zainclaude/goutreach/internal/search"
 	"github.com/zainclaude/goutreach/internal/store"
 )
 
-// Generator produces personalized cold emails via Claude.
+// Generator produces personalized cold emails via Claude (default) or an
+// alternate provider like Kimi (per-user setting; see provider.go).
 type Generator struct {
 	client  anthropic.Client
 	enabled bool
 	model   anthropic.Model
 	tiktok  TikTokShopChecker
 	log     *log.Logger
+
+	// Wired by ConfigureProviders — settings lookup for alternate providers.
+	settings SettingsSource
+	dec      Decrypter
 }
 
 // New builds a Generator. If apiKey is empty the generator is disabled and
@@ -57,6 +63,7 @@ type Input struct {
 	Lead      store.Lead
 	Templates []store.EmailTemplate
 	FromName  string
+	Provider  string // "" or "claude" (default) | "kimi"
 }
 
 // Result is the structured output of a generation run.
@@ -65,6 +72,7 @@ type Result struct {
 	Subject      string `json:"subject"`
 	Body         string `json:"body"`
 	Reasoning    string `json:"reasoning"`
+	Provider     string `json:"provider"` // which backend generated it (for A/B provenance)
 }
 
 var errDisabled = errors.New("ai generation disabled: ANTHROPIC_API_KEY not set")
@@ -111,8 +119,9 @@ Template C (Meta ads):
 
 // Generate runs the research decision tree and writes the email.
 func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
-	if !g.enabled {
-		return Result{}, errDisabled
+	run, err := g.providerFor(ctx, in)
+	if err != nil {
+		return Result{}, err
 	}
 
 	brand := strings.TrimSpace(in.Lead.Company)
@@ -121,16 +130,23 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 		brand = domainOf(in.Lead.Email)
 		brandIsDomain = true
 	}
-	g.log.Printf("ai[%s] start (brand_from_domain=%v)", brand, brandIsDomain)
+	g.log.Printf("ai[%s] start provider=%s model=%s (brand_from_domain=%v)", brand, run.name, run.model, brandIsDomain)
 
-	tools := []anthropic.ToolUnionParam{
+	var tools []anthropic.ToolUnionParam
+	if run.serperKey != "" {
+		// Provider without a server-side search tool (Kimi): client-side
+		// Serper-backed web_search, executed in runCustomTools.
+		tools = append(tools, clientWebSearchTool())
+	} else {
 		// Use the 2025-03-05 web_search: it returns plain web_search_tool_result
 		// blocks that round-trip through ToParam correctly. The 2026-02-09 variant
 		// runs server-side in a code-execution container and returns
 		// code_execution_tool_result blocks whose error variant the SDK fails to
 		// re-serialize, 400-ing every multi-turn continuation.
-		{OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{}},
-		{OfTool: &anthropic.ToolParam{
+		tools = append(tools, anthropic.ToolUnionParam{OfWebSearchTool20250305: &anthropic.WebSearchTool20250305Param{}})
+	}
+	tools = append(tools, anthropic.ToolUnionParam{
+		OfTool: &anthropic.ToolParam{
 			Name:        "check_tiktok_shop",
 			Description: anthropic.String("Check whether a brand sells on TikTok Shop using the kalodata.com data source. Returns on_tiktok_shop = yes | no | unknown, and — when available — the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d. Use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, do not guess."),
 			InputSchema: anthropic.ToolInputSchemaParam{
@@ -142,11 +158,11 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 				},
 				Required: []string{"brand_name"},
 			},
-		}},
-	}
+		},
+	})
 
 	params := anthropic.MessageNewParams{
-		Model:     g.model,
+		Model:     run.model,
 		MaxTokens: 12000,
 		System: []anthropic.TextBlockParam{{
 			Text: g.systemPrompt(in, brand, brandIsDomain),
@@ -159,9 +175,9 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 
 	const maxIters = 14
 	for i := 0; i < maxIters; i++ {
-		resp, err := g.client.Messages.New(ctx, params)
+		resp, err := run.client.Messages.New(ctx, params)
 		if err != nil {
-			return Result{}, fmt.Errorf("claude: %w", err)
+			return Result{}, fmt.Errorf("%s: %w", run.name, err)
 		}
 		params.Messages = append(params.Messages, resp.ToParam())
 		g.logTurn(brand, i, resp)
@@ -171,7 +187,7 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 			// Server-side tool loop paused; resend to continue.
 			continue
 		case anthropic.StopReasonToolUse:
-			results, err := g.runCustomTools(ctx, brand, resp)
+			results, err := g.runCustomTools(ctx, brand, run, resp)
 			if err != nil {
 				return Result{}, err
 			}
@@ -186,7 +202,8 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 			if err == nil {
 				res.Subject = stripEmDashes(res.Subject)
 				res.Body = stripEmDashes(res.Body)
-				g.log.Printf("ai[%s] ✅ DONE template=%s — %s", brand, res.TemplateUsed, truncate(res.Reasoning, 300))
+				res.Provider = run.name
+				g.log.Printf("ai[%s] ✅ DONE provider=%s template=%s — %s", brand, run.name, res.TemplateUsed, truncate(res.Reasoning, 300))
 			}
 			return res, err
 		}
@@ -194,32 +211,57 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 	return Result{}, errors.New("generation did not converge within iteration limit")
 }
 
-// runCustomTools executes any check_tiktok_shop tool calls and returns tool results.
-func (g *Generator) runCustomTools(ctx context.Context, brand string, resp *anthropic.Message) ([]anthropic.ContentBlockParamUnion, error) {
+// runCustomTools executes client-side tool calls (check_tiktok_shop, and — on
+// providers without server-side search — web_search) and returns tool results.
+func (g *Generator) runCustomTools(ctx context.Context, brand string, run providerRun, resp *anthropic.Message) ([]anthropic.ContentBlockParamUnion, error) {
 	var results []anthropic.ContentBlockParamUnion
 	for _, block := range resp.Content {
 		tu, ok := block.AsAny().(anthropic.ToolUseBlock)
-		if !ok || tu.Name != "check_tiktok_shop" {
+		if !ok {
 			continue
 		}
-		var args struct {
-			BrandName string `json:"brand_name"`
+		switch tu.Name {
+		case "check_tiktok_shop":
+			var args struct {
+				BrandName string `json:"brand_name"`
+			}
+			_ = json.Unmarshal([]byte(tu.JSON.Input.Raw()), &args)
+			q := args.BrandName
+			if q == "" {
+				q = brand
+			}
+			res, err := g.tiktok.Check(ctx, q)
+			if err != nil {
+				g.log.Printf("ai[%s] check_tiktok_shop(%q) error: %v", brand, q, err)
+				results = append(results, anthropic.NewToolResultBlock(tu.ID,
+					fmt.Sprintf(`{"on_tiktok_shop":"unknown","details":%q}`, "check failed: "+err.Error()), false))
+				continue
+			}
+			out, _ := json.Marshal(res)
+			g.log.Printf("ai[%s] check_tiktok_shop(%q) -> %s", brand, q, string(out))
+			results = append(results, anthropic.NewToolResultBlock(tu.ID, string(out), false))
+
+		case "web_search":
+			if run.serperKey == "" {
+				continue // Claude's web_search is server-side; nothing to do here
+			}
+			var args struct {
+				Query string `json:"query"`
+			}
+			_ = json.Unmarshal([]byte(tu.JSON.Input.Raw()), &args)
+			if strings.TrimSpace(args.Query) == "" {
+				results = append(results, anthropic.NewToolResultBlock(tu.ID, "error: empty query", true))
+				continue
+			}
+			out, err := search.Serper(ctx, run.serperKey, args.Query, 8)
+			if err != nil {
+				g.log.Printf("ai[%s] web_search(%q) error: %v", brand, args.Query, err)
+				results = append(results, anthropic.NewToolResultBlock(tu.ID, "search failed: "+err.Error(), true))
+				continue
+			}
+			g.log.Printf("ai[%s] web_search(%q) -> %d bytes", brand, args.Query, len(out))
+			results = append(results, anthropic.NewToolResultBlock(tu.ID, out, false))
 		}
-		_ = json.Unmarshal([]byte(tu.JSON.Input.Raw()), &args)
-		q := args.BrandName
-		if q == "" {
-			q = brand
-		}
-		res, err := g.tiktok.Check(ctx, q)
-		if err != nil {
-			g.log.Printf("ai[%s] check_tiktok_shop(%q) error: %v", brand, q, err)
-			results = append(results, anthropic.NewToolResultBlock(tu.ID,
-				fmt.Sprintf(`{"on_tiktok_shop":"unknown","details":%q}`, "check failed: "+err.Error()), false))
-			continue
-		}
-		out, _ := json.Marshal(res)
-		g.log.Printf("ai[%s] check_tiktok_shop(%q) -> %s", brand, q, string(out))
-		results = append(results, anthropic.NewToolResultBlock(tu.ID, string(out), false))
 	}
 	return results, nil
 }

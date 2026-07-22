@@ -57,6 +57,7 @@ func main() {
 
 	tiktok := research.New(st, cipher, logger)
 	gen := ai.New(cfg.AnthropicKey, cfg.AIModel, tiktok, logger)
+	gen.ConfigureProviders(st, cipher) // enables the Kimi provider (keys live in Settings)
 	if !gen.Enabled() {
 		logger.Println("warning: ANTHROPIC_API_KEY not set — AI generation disabled")
 	} else {
