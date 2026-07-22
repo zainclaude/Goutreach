@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/zainclaude/goutreach/internal/ai"
@@ -23,6 +24,12 @@ type Service struct {
 	gen    *ai.Generator
 	appURL string
 	log    *log.Logger
+
+	// previewsInFlight counts preview generations running in this process. The
+	// recovery sweep skips while any are live: batch rows are pre-created at
+	// preview time, so later leads in a long batch look "old and queued" to
+	// the sweep even though the batch loop is still on its way to them.
+	previewsInFlight atomic.Int64
 }
 
 // New builds a sender Service.
@@ -72,6 +79,10 @@ func (s *Service) runRecovery(ctx context.Context) {
 }
 
 func (s *Service) recoverStuck(ctx context.Context, cutoffAge time.Duration) {
+	if n := s.previewsInFlight.Load(); n > 0 {
+		s.log.Printf("sender: recovery sweep skipped — %d preview generation(s) in flight", n)
+		return
+	}
 	msgs, err := s.st.ListStuckQueuedMessages(ctx, time.Now().Add(-cutoffAge), 10)
 	if err != nil {
 		s.log.Printf("sender: stuck-generation query: %v", err)
@@ -435,6 +446,8 @@ func (s *Service) pickAccount(ctx context.Context, campaignID int64) (store.Emai
 // GeneratePreview generates (without sending) the message for a lead+step. Used
 // by the preview endpoint so the user can review the first emails before launch.
 func (s *Service) GeneratePreview(ctx context.Context, campaign store.Campaign, cl store.CampaignLead, stepIndex int) (store.Message, error) {
+	s.previewsInFlight.Add(1)
+	defer s.previewsInFlight.Add(-1)
 	step, err := s.st.GetStep(ctx, campaign.ID, stepIndex)
 	if err != nil {
 		return store.Message{}, fmt.Errorf("step %d not found", stepIndex)

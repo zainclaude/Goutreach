@@ -117,6 +117,15 @@ Template C (Meta ads):
        place inside the parenthesis. This count also qualifies the brand for
        Template C. Fallback: if you cannot determine the count, do NOT use
        Template C — continue the decision tree to the next step.
+
+AFTER applying fallbacks, re-read every sentence of the final email. A sentence
+must never be left grammatically broken by a removed value ("you have active
+affiliates in the last 30 days" with no number is NOT acceptable) — if removing
+a marker breaks its sentence or leaves a claim with nothing backing it, rewrite
+or delete that whole sentence/bullet. If NONE of the A#1/A#2 figures are
+verified, do not present a numbered list of specific metric gaps at all; write
+a short qualitative version of the pitch (more creators, more video volume,
+GMV Max setup) that makes no countable claims.
 `
 
 // Generate runs the research decision tree and writes the email.
