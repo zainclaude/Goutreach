@@ -95,8 +95,15 @@ omits is unverified, so apply that marker's fallback:
 - A#0  Performance phrase from monthly TikTok Shop revenue:
        >= $100K/mo -> "crushing it"; $20K-$100K/mo -> "picking up";
        < $20K/mo -> "just getting started".
-       Fallback (revenue unverifiable): pick the phrase that best fits the
-       strongest public signals, and do NOT state a dollar figure you didn't verify.
+       Fallback (revenue unverifiable): judge by the brand's OVERALL public
+       stature, not only its TikTok signals. A famous or clearly large brand
+       (household name in its niche, major retail distribution, celebrity/
+       athlete endorsements, 100K+ social following) -> "crushing it".
+       A mid-size growing brand -> "picking up". Only a small or clearly new
+       brand -> "just getting started". When torn between two tiers, ALWAYS
+       choose the higher one — a successful prospect reading an underestimate
+       of their own brand is worse than mild flattery. Never state a dollar
+       figure you didn't verify.
 - A#1  Number of active affiliates -> place inside the parenthesis.
        Fallback: if unverifiable OR the value is 0, remove that parenthetical
        entirely — never write a zero into the email.
