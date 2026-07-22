@@ -241,9 +241,10 @@ func keysOf(list []map[string]any) []string {
 }
 
 // pickShop chooses the best brand-name match from search results, preferring an
-// exact normalized name, then a containment match, to avoid grabbing the wrong shop.
+// exact normalized name, then a strict directional match, to avoid grabbing the
+// wrong shop.
 func pickShop(brand string, list []map[string]any) map[string]any {
-	want := normName(brand)
+	want := NormBrand(brand)
 	if want == "" || len(list) == 0 {
 		return nil
 	}
@@ -253,33 +254,51 @@ func pickShop(brand string, list []map[string]any) map[string]any {
 			return s
 		}
 	}
-	// Otherwise the top (most keyword-relevant) hit if its name fuzzy-matches —
-	// handles "Mary Ruth's" vs "MaryRuth Organics".
+	// Otherwise the top (most keyword-relevant) hit if its name credibly
+	// belongs to the brand — handles "Mary Ruth's" vs "MaryRuth Organics".
 	top := list[0]
-	if nameMatches(want, normName(firstStr(top, nameKeys...))) {
+	if NameMatches(want, normName(firstStr(top, nameKeys...))) {
 		return top
 	}
 	return nil
 }
 
-// nameMatches is a lenient brand-name comparison: equal, one contains the other,
-// or a strong shared prefix (>=5 chars and at least half of the shorter name).
-func nameMatches(want, got string) bool {
+// NameMatches reports whether a (normalized) shop name credibly belongs to the
+// (normalized) brand name. Direction matters: a shop that EXTENDS the brand
+// name ("Nike" -> "Nike Official Store", "BISSELL" -> "BISSELL Clean") is
+// credible, but a shop that is only a FRAGMENT of the brand ("Broken Arrow"
+// for "Broken Arrow Electric Supply") is usually a different company sharing a
+// generic prefix — those are rejected so no metrics get attributed to the
+// wrong shop. A false negative just routes the lead to the next template; a
+// false positive writes someone else's revenue into the email.
+func NameMatches(want, got string) bool {
 	if want == "" || got == "" {
 		return false
 	}
-	if want == got || strings.Contains(got, want) || strings.Contains(want, got) {
+	if want == got {
 		return true
 	}
+	// Whole brand name contained in the shop name (shop = brand + qualifiers).
+	if len(want) >= 4 && strings.Contains(got, want) {
+		return true
+	}
+	// Shop name shares a prefix covering (nearly) the whole brand name —
+	// tolerates spelling drift at the end ("maryruths" vs "maryruthorganics").
 	cp := 0
 	for cp < len(want) && cp < len(got) && want[cp] == got[cp] {
 		cp++
 	}
-	min := len(want)
-	if len(got) < min {
-		min = len(got)
+	return cp >= 5 && cp >= len(want)-2
+}
+
+// NormBrand normalizes a brand name for matching, dropping trailing legal
+// suffixes ("Inc", "LLC", ...) that shop names rarely carry.
+func NormBrand(brand string) string {
+	fields := strings.Fields(brand)
+	for len(fields) > 1 && legalSuffixes[strings.Trim(strings.ToLower(fields[len(fields)-1]), ".,")] {
+		fields = fields[:len(fields)-1]
 	}
-	return cp >= 5 && cp*2 >= min
+	return normName(strings.Join(fields, " "))
 }
 
 func normName(s string) string {

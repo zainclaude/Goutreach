@@ -184,21 +184,33 @@ func (s *Service) ensureGenerated(ctx context.Context, campaign store.Campaign, 
 		return store.Message{}, fmt.Errorf("get lead: %w", err)
 	}
 
-	// Brand-level cache: if this domain was already routed for this step, reuse
-	// the saved email (re-personalized for this contact) — no tokens, no wait.
+	// Which provider generates for this user — resolved before the cache
+	// lookup because the brand cache is per-provider (A/B correctness).
+	provider, _, _ := s.st.GetSetting(ctx, campaign.UserID, ai.SettingAIProvider)
+	if !strings.EqualFold(strings.TrimSpace(provider), "kimi") {
+		provider = "claude"
+	} else {
+		provider = "kimi"
+	}
+
+	// Brand-level cache: if this domain was already routed for this step by
+	// this provider, reuse the saved email (re-personalized) — no tokens.
 	domain := emailDomain(lead.Email)
 	cacheable := domain != "" && !isFreeMail(domain)
 	if cacheable {
-		if cached, ok, err := s.st.GetBrandEmail(ctx, campaign.UserID, domain, step.StepIndex); err != nil {
+		if cached, ok, err := s.st.GetBrandEmail(ctx, campaign.UserID, domain, step.StepIndex, provider); err != nil {
 			s.log.Printf("sender: brand cache lookup %s: %v", domain, err)
 		} else if ok {
 			subject := ai.Personalize(cached.Subject, lead)
 			body := ai.Personalize(cached.Body, lead)
 			notes := fmt.Sprintf("cached brand email (%s, template %s)", domain, cached.TemplateUsed)
+			if provider != "claude" {
+				notes = "[" + provider + "] " + notes
+			}
 			if err := s.st.SetMessageGenerated(ctx, msg.ID, subject, body, cached.TemplateUsed, notes); err != nil {
 				return store.Message{}, err
 			}
-			s.log.Printf("sender: reused cached email for %s (lead %d, step %d) — skipped generation", domain, lead.ID, step.StepIndex)
+			s.log.Printf("sender: reused cached %s email for %s (lead %d, step %d) — skipped generation", provider, domain, lead.ID, step.StepIndex)
 			return s.st.GetMessage(ctx, msg.ID)
 		}
 	}
@@ -208,7 +220,6 @@ func (s *Service) ensureGenerated(ctx context.Context, campaign store.Campaign, 
 		return store.Message{}, fmt.Errorf("templates: %w", err)
 	}
 
-	provider, _, _ := s.st.GetSetting(ctx, campaign.UserID, ai.SettingAIProvider)
 	res, err := s.gen.Generate(ctx, ai.Input{
 		Brief:     campaign.Brief,
 		Angle:     step.Angle,
@@ -238,6 +249,7 @@ func (s *Service) ensureGenerated(ctx context.Context, campaign store.Campaign, 
 		}
 		if err := s.st.SaveBrandEmail(ctx, store.BrandEmail{
 			UserID: campaign.UserID, Domain: domain, StepIndex: step.StepIndex,
+			Provider:  res.Provider,
 			BrandName: brandName, TemplateUsed: res.TemplateUsed,
 			Subject:       ai.TokenizeName(res.Subject, lead),
 			Body:          ai.TokenizeName(res.Body, lead),

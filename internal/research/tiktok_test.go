@@ -44,6 +44,12 @@ func TestPickSellerID(t *testing.T) {
 	if got := pickSellerID("Totally Unrelated Co", bissell); got != "" {
 		t.Errorf("unrelated -> %q, want empty", got)
 	}
+	// A shop that's only a fragment of the brand name is a different company —
+	// "Broken Arrow" (apparel) must not match "Broken Arrow Electric Supply".
+	frag := []sellerHit{{SellerID: "f1", SellerName: "Broken Arrow", GMVin30: 271000, Score: 60}}
+	if got := pickSellerID("Broken Arrow Electric Supply, Inc.", frag); got != "" {
+		t.Errorf("fragment shop -> %q, want empty", got)
+	}
 	if got := pickSellerID("anything", nil); got != "" {
 		t.Errorf("no hits -> %q, want empty", got)
 	}

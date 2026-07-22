@@ -87,13 +87,32 @@ func TestNameMatches(t *testing.T) {
 	}{
 		{"maryruths", "maryruthorganics", true}, // Mary Ruth's vs MaryRuth Organics
 		{"saltstick", "saltstick", true},
-		{"nike", "nikeofficialstore", true},
+		{"nike", "nikeofficialstore", true}, // shop extends the brand name — credible
 		{"maryruths", "totallydifferentco", false},
 		{"apple", "", false},
+		// A shop that is only a fragment of the brand is a different company
+		// sharing a generic prefix — must be rejected (real false positives).
+		{"brokenarrowelectricsupply", "brokenarrow", false},
+		{"berryfresh", "berry", false},
+		{"clydesdonuts", "clydes", false},
 	}
 	for _, c := range cases {
-		if got := nameMatches(c.want, c.got); got != c.ok {
-			t.Errorf("nameMatches(%q,%q)=%v want %v", c.want, c.got, got, c.ok)
+		if got := NameMatches(c.want, c.got); got != c.ok {
+			t.Errorf("NameMatches(%q,%q)=%v want %v", c.want, c.got, got, c.ok)
+		}
+	}
+}
+
+func TestNormBrand(t *testing.T) {
+	cases := map[string]string{
+		"Broken Arrow Electric Supply, Inc.": "brokenarrowelectricsupply",
+		"MaryRuth's":                         "maryruths",
+		"Acme Co.":                           "acme",
+		"Inc":                                "inc", // single token is never stripped
+	}
+	for in, want := range cases {
+		if got := NormBrand(in); got != want {
+			t.Errorf("NormBrand(%q)=%q want %q", in, got, want)
 		}
 	}
 }

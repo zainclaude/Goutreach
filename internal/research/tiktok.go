@@ -226,10 +226,12 @@ type sellerHit struct {
 // pickSellerID chooses the right seller for a brand name. It prefers an exact
 // normalized name match (and since hits are score-sorted, the first such match is
 // the most relevant — e.g. the real "MaryRuth's" over a $0 duplicate), then falls
-// back to the top hit only when its name overlaps the brand. No confident match
-// returns "" so the caller omits the markers rather than use the wrong shop.
+// back to the top hit only when its name credibly belongs to the brand (see
+// fastmoss.NameMatches — a shop that's just a fragment of the brand name is
+// rejected). No confident match returns "" so the caller omits the markers
+// rather than use the wrong shop.
 func pickSellerID(brand string, hits []sellerHit) string {
-	want := normName(brand)
+	want := fastmoss.NormBrand(brand)
 	if want == "" {
 		return ""
 	}
@@ -239,8 +241,7 @@ func pickSellerID(brand string, hits []sellerHit) string {
 		}
 	}
 	if len(hits) > 0 {
-		tn := normName(hits[0].SellerName)
-		if tn != "" && (strings.Contains(tn, want) || strings.Contains(want, tn)) {
+		if fastmoss.NameMatches(want, normName(hits[0].SellerName)) {
 			return hits[0].SellerID
 		}
 	}
