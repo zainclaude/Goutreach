@@ -98,9 +98,11 @@ omits is unverified, so apply that marker's fallback:
        Fallback (revenue unverifiable): pick the phrase that best fits the
        strongest public signals, and do NOT state a dollar figure you didn't verify.
 - A#1  Number of active affiliates -> place inside the parenthesis.
-       Fallback: if unverifiable, remove that parenthetical entirely.
+       Fallback: if unverifiable OR the value is 0, remove that parenthetical
+       entirely — never write a zero into the email.
 - A#2  Number of videos posted in the last 30 days -> place inside the parenthesis.
-       Fallback: if unverifiable, remove that parenthetical entirely.
+       Fallback: if unverifiable OR the value is 0, remove that parenthetical
+       entirely — never write a zero into the email.
 - A#3  Video-volume nudge, from the A#2 number:
        < 300 -> "at least 300 videos/month";
        300-1,000 -> "at least 1,000 videos/month";

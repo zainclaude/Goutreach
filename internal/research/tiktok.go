@@ -336,13 +336,33 @@ func queryKalodata(ctx context.Context, cr creds, brand string) (ai.TikTokShopRe
 	if err != nil {
 		return unknown, err
 	}
-	return ai.TikTokShopResult{
-		OnTikTokShop:      "yes",
-		Details:           fmt.Sprintf("kalodata: %s — trailing-30d GMV $%.0f, %d active affiliates, %d videos", brand, m.RevenueUSD, m.Affiliates, m.Videos30d),
-		MonthlyRevenueUSD: &m.RevenueUSD,
-		ActiveAffiliates:  &m.Affiliates,
-		Videos30d:         &m.Videos30d,
-	}, nil
+	// kalodata's index carries $0 stale/duplicate seller entries. A shop with
+	// zero GMV, zero affiliates, and zero videos is indistinguishable from a
+	// dead index entry — don't claim the brand sells on TikTok Shop from it;
+	// let the decision tree keep going (web search may still find evidence).
+	if m.RevenueUSD <= 0 && m.Affiliates == 0 && m.Videos30d == 0 {
+		return ai.TikTokShopResult{
+			OnTikTokShop: "unknown",
+			Details:      fmt.Sprintf("kalodata: found a %q entry but with zero GMV/affiliates/videos — likely a stale index entry, not a live shop; treat as unverified", brand),
+		}, nil
+	}
+	res := ai.TikTokShopResult{
+		OnTikTokShop: "yes",
+		Details:      fmt.Sprintf("kalodata: %s — trailing-30d GMV $%.0f, %d active affiliates, %d videos", brand, m.RevenueUSD, m.Affiliates, m.Videos30d),
+	}
+	// Individual zero metrics mean "unavailable", not a verified zero — omit
+	// them (same rule as the fastmoss path) so the generator drops the marker
+	// instead of writing "you have 0 affiliates" into the email.
+	if m.RevenueUSD > 0 {
+		res.MonthlyRevenueUSD = &m.RevenueUSD
+	}
+	if m.Affiliates > 0 {
+		res.ActiveAffiliates = &m.Affiliates
+	}
+	if m.Videos30d > 0 {
+		res.Videos30d = &m.Videos30d
+	}
+	return res, nil
 }
 
 // last30 returns the trailing 30-day window (yesterday back 30 days) as YYYY-MM-DD,
@@ -394,6 +414,14 @@ func queryFastmossAPI(ctx context.Context, logger *log.Logger, secret, brand str
 	}
 	if !m.Found {
 		return unknown, nil
+	}
+	// Same dead-entry guard as kalodata: a matched shop with zero GMV, zero
+	// creators, and zero videos proves nothing — treat as unresolved.
+	if m.RevenueUSD <= 0 && m.Creators == 0 && m.Videos == 0 {
+		return ai.TikTokShopResult{
+			OnTikTokShop: "unknown",
+			Details:      fmt.Sprintf("fastmoss: found a %q entry but with zero GMV/creators/videos — likely a stale index entry, not a live shop; treat as unverified", brand),
+		}, nil
 	}
 	rev, creators, videos := m.RevenueUSD, m.Creators, m.Videos
 	res := ai.TikTokShopResult{
