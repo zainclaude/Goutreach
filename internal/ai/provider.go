@@ -21,7 +21,7 @@ import (
 // client-side web_search tool backed by Serper.dev (see runCustomTools).
 const (
 	kimiBaseURL      = "https://api.moonshot.ai/anthropic"
-	defaultKimiModel = "kimi-k2.5"
+	defaultKimiModel = "kimi-k2.6"
 
 	// Settings keys (per-user, stored via the Settings page; secrets encrypted).
 	SettingAIProvider   = "ai_provider" // "claude" (default) | "kimi"

@@ -95,7 +95,7 @@ export default function Settings() {
         <h3>AI generation model</h3>
         <p className="muted">
           Which model researches brands and writes your emails. <b>Claude Sonnet 5</b> is the default
-          (uses the server's Anthropic key, built-in web search). <b>Kimi K2.5</b> (Moonshot) is the
+          (uses the server's Anthropic key, built-in web search). <b>Kimi K2.6</b> (Moonshot) is the
           cheaper open-source alternative — it needs a Moonshot API key (platform.moonshot.ai → API keys)
           plus a <b>Serper.dev</b> key for web research, since Kimi has no built-in search.
           Reply classification always uses Claude. Kimi-generated emails are tagged <code>[kimi]</code> in
@@ -114,7 +114,7 @@ export default function Settings() {
           }}
         >
           <option value="claude">Claude Sonnet 5 (default)</option>
-          <option value="kimi">Kimi K2.5 (Moonshot)</option>
+          <option value="kimi">Kimi K2.6 (Moonshot)</option>
         </select>
         <label style={{ marginTop: 10, display: "block" }}>
           Kimi (Moonshot) API key {existing["kimi_api_key"] && <span className="tag">set</span>}
@@ -132,7 +132,7 @@ export default function Settings() {
         <div className="row">
           <input
             value={vals["kimi_model"] || ""}
-            placeholder="kimi-k2.5 (default)"
+            placeholder="kimi-k2.6 (default)"
             onChange={(e) => setVals({ ...vals, kimi_model: e.target.value })}
           />
           <button onClick={() => save("kimi_model", false)}>Save</button>
