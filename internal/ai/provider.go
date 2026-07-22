@@ -104,6 +104,33 @@ func (g *Generator) providerFor(ctx context.Context, in Input) (providerRun, err
 	}, nil
 }
 
+// VerifyKimiKey makes a minimal live request against Moonshot's
+// Anthropic-compatible endpoint to confirm the API key (and model name) work.
+// Returns the model's reply text and the model that was used.
+func VerifyKimiKey(ctx context.Context, apiKey, model string) (reply, usedModel string, err error) {
+	if strings.TrimSpace(model) == "" {
+		model = defaultKimiModel
+	}
+	client := anthropic.NewClient(option.WithAPIKey(apiKey), option.WithBaseURL(kimiBaseURL))
+	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     anthropic.Model(model),
+		MaxTokens: 16,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock("Reply with the single word: ok")),
+		},
+	})
+	if err != nil {
+		return "", model, err
+	}
+	var text strings.Builder
+	for _, b := range resp.Content {
+		if tb, ok := b.AsAny().(anthropic.TextBlock); ok {
+			text.WriteString(tb.Text)
+		}
+	}
+	return strings.TrimSpace(text.String()), model, nil
+}
+
 // clientWebSearchTool is the client-side replacement for Anthropic's
 // server-side web_search, used on providers that don't have one.
 func clientWebSearchTool() anthropic.ToolUnionParam {

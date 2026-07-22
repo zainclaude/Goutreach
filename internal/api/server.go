@@ -101,6 +101,8 @@ func (s *Server) Router() http.Handler {
 		})
 
 		r.Get("/research/fastmoss/ping", s.handleFastmossPing)
+		r.Get("/ai/kimi/ping", s.handleKimiPing)
+		r.Get("/ai/serper/ping", s.handleSerperPing)
 
 		// Returns the Google consent URL to redirect the browser to.
 		r.Get("/oauth/google/start", s.handleGoogleStart)

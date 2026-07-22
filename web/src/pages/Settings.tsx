@@ -149,6 +149,32 @@ export default function Settings() {
           />
           <button onClick={() => save("serper_api_key", true)}>Save key</button>
         </div>
+        <div className="row" style={{ marginTop: 10 }}>
+          <button
+            className="secondary"
+            onClick={async () => {
+              setMsg("Testing Moonshot key (sends a tiny generation request)…");
+              try {
+                const r = await api.get<{ ok: boolean; model: string; reply: string }>("/ai/kimi/ping");
+                setMsg(`✓ Moonshot key works — ${r.model} replied "${r.reply}"`);
+              } catch (e: any) { setMsg("✗ " + e.message); }
+            }}
+          >
+            Test Kimi key
+          </button>
+          <button
+            className="secondary"
+            onClick={async () => {
+              setMsg("Testing Serper key (runs one real search)…");
+              try {
+                const r = await api.get<{ ok: boolean; sample: string }>("/ai/serper/ping");
+                setMsg(`✓ Serper key works — web search is available. ${r.sample}`);
+              } catch (e: any) { setMsg("✗ " + e.message); }
+            }}
+          >
+            Test Serper key
+          </button>
+        </div>
         {msg && <p className={msg.startsWith("✗") ? "err" : "ok"}>{msg}</p>}
       </div>
 
