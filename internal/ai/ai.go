@@ -150,7 +150,7 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 	tools = append(tools, anthropic.ToolUnionParam{
 		OfTool: &anthropic.ToolParam{
 			Name:        "check_tiktok_shop",
-			Description: anthropic.String("Check whether a brand sells on TikTok Shop using the kalodata.com data source. Returns on_tiktok_shop = yes | no | unknown, and — when available — the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d. Use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, do not guess."),
+			Description: anthropic.String("Check whether a brand sells on TikTok Shop via our TikTok Shop analytics providers. Returns on_tiktok_shop = yes | no | unknown, and — when available — the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d. Use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, never state or imply a number for it (and never write a zero). Do not name the data provider in the email or reasoning."),
 			InputSchema: anthropic.ToolInputSchemaParam{
 				Properties: map[string]any{
 					"brand_name": map[string]any{

@@ -348,7 +348,7 @@ func queryKalodata(ctx context.Context, cr creds, brand string) (ai.TikTokShopRe
 	}
 	res := ai.TikTokShopResult{
 		OnTikTokShop: "yes",
-		Details:      fmt.Sprintf("kalodata: %s — trailing-30d GMV $%.0f, %d active affiliates, %d videos", brand, m.RevenueUSD, m.Affiliates, m.Videos30d),
+		Details:      fmt.Sprintf("kalodata: %s — %s", brand, metricSummary(m.RevenueUSD, m.Affiliates, m.Videos30d)),
 	}
 	// Individual zero metrics mean "unavailable", not a verified zero — omit
 	// them (same rule as the fastmoss path) so the generator drops the marker
@@ -363,6 +363,33 @@ func queryKalodata(ctx context.Context, cr creds, brand string) (ai.TikTokShopRe
 		res.Videos30d = &m.Videos30d
 	}
 	return res, nil
+}
+
+// metricSummary describes only the verified (non-zero) figures, naming the
+// missing ones as unverified — the model must never see a literal zero it
+// could quote into the email ("you posted 0 videos").
+func metricSummary(rev float64, affiliates, videos int) string {
+	var have, missing []string
+	if rev > 0 {
+		have = append(have, fmt.Sprintf("monthly GMV $%.0f", rev))
+	} else {
+		missing = append(missing, "GMV")
+	}
+	if affiliates > 0 {
+		have = append(have, fmt.Sprintf("%d active affiliates", affiliates))
+	} else {
+		missing = append(missing, "affiliate count")
+	}
+	if videos > 0 {
+		have = append(have, fmt.Sprintf("%d videos in the last 30 days", videos))
+	} else {
+		missing = append(missing, "video count")
+	}
+	s := strings.Join(have, ", ")
+	if len(missing) > 0 {
+		s += " (" + strings.Join(missing, ", ") + " unverified — omit those markers)"
+	}
+	return s
 }
 
 // last30 returns the trailing 30-day window (yesterday back 30 days) as YYYY-MM-DD,
@@ -426,7 +453,7 @@ func queryFastmossAPI(ctx context.Context, logger *log.Logger, secret, brand str
 	rev, creators, videos := m.RevenueUSD, m.Creators, m.Videos
 	res := ai.TikTokShopResult{
 		OnTikTokShop: "yes",
-		Details:      fmt.Sprintf("fastmoss: %s — monthly GMV $%.0f, %d creators, %d videos", brand, rev, creators, videos),
+		Details:      fmt.Sprintf("fastmoss: %s — %s", brand, metricSummary(rev, creators, videos)),
 	}
 	// Only surface metrics that came back non-zero. A 0 here means the value was
 	// unavailable (e.g. an endpoint returned nothing), not a real zero, so leave
