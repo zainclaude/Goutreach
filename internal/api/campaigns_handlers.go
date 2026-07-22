@@ -314,6 +314,23 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pre-create the batch's message rows up front. Generation runs lazily one
+	// lead at a time, so without this a restart mid-batch leaves the untouched
+	// leads with no rows at all — invisible to the recovery sweep. With rows
+	// pre-created, every interrupted or unstarted lead self-heals.
+	for _, cl := range leads {
+		if _, err := s.st.GetMessageForStep(r.Context(), cl.ID, 0); err != nil {
+			if _, err := s.st.CreateMessage(r.Context(), store.Message{
+				CampaignLeadID: cl.ID,
+				StepIndex:      0,
+				Status:         "queued",
+				Approved:       !campaign.RequireApproval,
+			}); err != nil {
+				s.log.Printf("preview: pre-create msg for lead %d: %v", cl.LeadID, err)
+			}
+		}
+	}
+
 	// Generate in the background (each can take a while due to web research).
 	go func(cl []store.CampaignLead, camp store.Campaign) {
 		for _, lead := range cl {
