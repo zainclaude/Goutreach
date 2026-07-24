@@ -159,18 +159,18 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 		_ = p.st.SetReplyBody(ctx, msg.ID, in.Text)
 	}
 	if msg.Status == "replied" {
-		// Follow-up reply on a thread we already know about. If the user has
-		// manually replied in this thread (a live conversation — e.g. booking a
-		// call), alert them on every inbound reply, unclassified: at this stage
-		// nothing from the lead is safe to drop.
-		if msg.UserRepliedAt != nil {
-			_ = p.st.CreateEvent(ctx, msg.ID, "reply", map[string]any{
-				"from":     in.FromAddr,
-				"subject":  in.Subject,
-				"followup": true,
-			})
-			p.notifyReply(ctx, acc, in, true)
-		}
+		// Another inbound message on a thread that already replied. The
+		// sequence stopped for this lead at their first reply, so anything
+		// arriving now is a real person continuing the conversation — either
+		// answering the user's reply (which may have been sent from their own
+		// mail client, invisible to us) or bumping the thread. Always alert,
+		// unclassified: at this stage nothing from the lead is safe to drop.
+		_ = p.st.CreateEvent(ctx, msg.ID, "reply", map[string]any{
+			"from":     in.FromAddr,
+			"subject":  in.Subject,
+			"followup": true,
+		})
+		p.notifyReply(ctx, acc, in, true)
 		return nil
 	}
 
