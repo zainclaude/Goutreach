@@ -407,9 +407,11 @@ func (s *Store) LaunchCampaign(ctx context.Context, userID, id int64) error {
 	if ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	// 'failed' is included: those messages regenerate later, and launching means
+	// the user wants everything unsent to go out once it exists.
 	if _, err := tx.Exec(ctx,
 		`UPDATE messages SET approved=true
-		 WHERE approved=false AND status IN ('generated','queued')
+		 WHERE approved=false AND status IN ('generated','queued','failed')
 		   AND campaign_lead_id IN (SELECT id FROM campaign_leads WHERE campaign_id=$1)`,
 		id); err != nil {
 		return err

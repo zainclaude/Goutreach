@@ -207,8 +207,19 @@ func (s *Service) processLead(ctx context.Context, cl store.CampaignLead) error 
 		return err
 	}
 	if !msg.Approved {
-		// Shouldn't happen with require_approval=false, but guard anyway.
-		return nil
+		if campaign.RequireApproval {
+			// Awaiting the user's preview approval — not the loop's call to make.
+			return nil
+		}
+		// The campaign is launched (approval gate off) but this message missed
+		// the launch-time bulk approval — e.g. it was 'failed' at launch and
+		// regenerated since. Approval is implicit once the gate is off; without
+		// this the lead is silently skipped forever.
+		s.log.Printf("sender: auto-approving msg %d (campaign %d launched; message missed launch-time approval)", msg.ID, cl.CampaignID)
+		if err := s.st.SetMessageApproved(ctx, msg.ID, true); err != nil {
+			return err
+		}
+		msg.Approved = true
 	}
 
 	if err := s.send(ctx, campaign, cl, step, account, msg); err != nil {
