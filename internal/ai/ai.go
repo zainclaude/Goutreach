@@ -166,7 +166,7 @@ func (g *Generator) Generate(ctx context.Context, in Input) (Result, error) {
 	tools = append(tools, anthropic.ToolUnionParam{
 		OfTool: &anthropic.ToolParam{
 			Name:        "check_tiktok_shop",
-			Description: anthropic.String("Check whether a brand sells on TikTok Shop via our TikTok Shop analytics providers. Returns on_tiktok_shop = yes | no | unknown, and — when available — the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d. Use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, never state or imply a number for it (and never write a zero). Do not name the data provider in the email or reasoning."),
+			Description: anthropic.String("Check whether a brand sells on TikTok Shop via our comprehensive TikTok Shop seller index. Returns on_tiktok_shop = yes | no | unknown. 'no' is authoritative — the brand is not selling on TikTok Shop; do not override it with web search results. Only 'unknown' (provider unavailable) justifies a web-search fallback. When available, also returns the brand's metrics: monthly_revenue_usd (trailing-30d TikTok Shop GMV), active_affiliates, and videos_last_30d — use these for the A#0–A#4 markers. A missing metric field means it is unverified — omit that marker, never state or imply a number for it (and never write a zero). Do not name the data provider in the email or reasoning."),
 			InputSchema: anthropic.ToolInputSchemaParam{
 				Properties: map[string]any{
 					"brand_name": map[string]any{
@@ -342,10 +342,18 @@ func (g *Generator) systemPrompt(in Input, brand string, brandIsDomain bool) str
 
 	b.WriteString(`DECISION TREE — follow IN ORDER to select exactly one template:
 Step 1. Determine whether the brand sells on TikTok Shop. Call check_tiktok_shop
-        first; if it returns "unknown", fall back to web_search (search
-        "<brand> TikTok Shop", tiktok.com and public kalodata.com mentions).
-        If there is credible evidence the brand sells on TikTok Shop -> TEMPLATE A.
-        Otherwise continue.
+        first and TRUST its answer:
+        - "yes" -> TEMPLATE A.
+        - "no"  -> the brand is NOT on TikTok Shop. Do NOT second-guess this
+          with web searches. Continue to Step 2.
+        - "unknown" (provider unavailable) -> you may fall back to web_search,
+          but the bar is HIGH: only conclude "yes" from explicit evidence of
+          actual SALES on TikTok Shop (e.g. a source reporting the brand's
+          TikTok Shop revenue/GMV or order volume). A TikTok profile, videos,
+          an affiliate program page, a kalodata/fastmoss directory page without
+          revenue, or products merely mentioned alongside TikTok are NOT
+          evidence — many brands have all of those without operating a shop.
+          When in doubt -> not on TikTok Shop; continue to Step 2.
 Step 2. Use web_search to check whether the brand sells on amazon.com.
         If the brand sells on Amazon -> use TEMPLATE B. Otherwise continue.
 Step 3. Use web_search to assess whether the brand runs ACTIVE ads in the US

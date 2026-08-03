@@ -440,14 +440,21 @@ func queryFastmossAPI(ctx context.Context, logger *log.Logger, secret, brand str
 		return unknown, err
 	}
 	if !m.Found {
-		return unknown, nil
+		// The search worked and the comprehensive seller index has no shop for
+		// this brand — that is a confident NO, not an unknown to be
+		// second-guessed by web search (profiles and directory pages are not
+		// shops). The decision tree should proceed to the Amazon check.
+		return ai.TikTokShopResult{
+			OnTikTokShop: "no",
+			Details:      fmt.Sprintf("the TikTok Shop seller index has no shop for %q — the brand is NOT selling on TikTok Shop; do not use Template A, continue the decision tree", brand),
+		}, nil
 	}
-	// Same dead-entry guard as kalodata: a matched shop with zero GMV, zero
-	// creators, and zero videos proves nothing — treat as unresolved.
+	// Dead-entry guard: a matched shop with zero GMV, zero creators, and zero
+	// videos is an empty/stale listing, not a live shop — also a NO.
 	if m.RevenueUSD <= 0 && m.Creators == 0 && m.Videos == 0 {
 		return ai.TikTokShopResult{
-			OnTikTokShop: "unknown",
-			Details:      fmt.Sprintf("fastmoss: found a %q entry but with zero GMV/creators/videos — likely a stale index entry, not a live shop; treat as unverified", brand),
+			OnTikTokShop: "no",
+			Details:      fmt.Sprintf("found a %q entry but with zero GMV/creators/videos — an empty or stale listing, not a live shop; do not use Template A, continue the decision tree", brand),
 		}, nil
 	}
 	rev, creators, videos := m.RevenueUSD, m.Creators, m.Videos
