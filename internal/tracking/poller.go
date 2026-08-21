@@ -196,8 +196,11 @@ func (p *Poller) handleInbound(ctx context.Context, acc store.EmailAccount, in m
 			p.log.Printf("poller: reply classification failed (%v) — notifying anyway", err)
 		}
 	}
-	if category == "interested" || category == "" {
-		// Notify the user + team that there's a reply waiting (first detection only).
+	if category == "interested" || category == "other" || category == "" {
+		// Notify the user + team that there's a reply waiting. Ambiguous
+		// ("other") and unclassified replies alert too — only confirmed noise
+		// (ooo/not_interested/unsubscribe) stays quiet, so a warm lead is
+		// never lost to a misclassification.
 		p.notifyReply(ctx, acc, in, false)
 	}
 	if category == "interested" {
