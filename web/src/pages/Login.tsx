@@ -8,6 +8,7 @@ export default function Login() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [err, setErr] = useState("");
   const nav = useNavigate();
+  const expired = new URLSearchParams(window.location.search).get("expired") === "1";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +27,7 @@ export default function Login() {
       <form className="card login-card" onSubmit={submit}>
         <h2>PipelineBuilder</h2>
         <p className="muted">{mode === "login" ? "Sign in to your dashboard" : "Create the first account"}</p>
+        {expired && <p className="err">Your session expired — log in again to continue.</p>}
         <label>Email</label>
         <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
         <label>Password</label>

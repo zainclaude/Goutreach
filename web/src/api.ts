@@ -22,6 +22,15 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
     payload = JSON.stringify(body);
   }
   const res = await fetch(`/api${path}`, { method, headers, body: payload });
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    // Expired/invalid session. Without this, pages silently render empty
+    // ("No leads yet") while every request 401s — bounce to login instead.
+    clearToken();
+    if (!window.location.pathname.startsWith("/login")) {
+      window.location.href = "/login?expired=1";
+    }
+    throw new Error("session expired — redirecting to login");
+  }
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
