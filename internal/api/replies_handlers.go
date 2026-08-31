@@ -100,12 +100,21 @@ func (s *Server) handleSendReply(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(strings.ToLower(subject), "re:") {
 		subject = "Re: " + subject
 	}
+	// Reply to whoever actually wrote back — a colleague may answer instead of
+	// the lead we emailed (e.g. d.lis@ replying for l.buffaloe@). Standard
+	// email reply semantics: To = the sender of the last inbound message.
+	toAddr := lead.Email
+	toName := strings.TrimSpace(lead.FirstName + " " + lead.LastName)
+	if from := s.st.LatestReplyFrom(r.Context(), msg.ID); from != "" && !strings.EqualFold(from, lead.Email) {
+		toAddr, toName = from, ""
+		s.log.Printf("reply: msg %d routed to actual replier %s (lead is %s)", msg.ID, from, lead.Email)
+	}
 	refs := strings.TrimSpace(msg.References + " " + msg.MessageID)
 	_, err = mailer.Send(r.Context(), creds, mailer.OutgoingEmail{
 		FromAddr:  acc.Email,
 		FromName:  acc.FromName,
-		ToAddr:    lead.Email,
-		ToName:    strings.TrimSpace(lead.FirstName + " " + lead.LastName),
+		ToAddr:    toAddr,
+		ToName:    toName,
 		Cc:        cc,
 		Subject:   subject,
 		TextBody:  req.Body,

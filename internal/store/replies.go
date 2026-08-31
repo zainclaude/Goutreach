@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type ReplyThread struct {
 	CampaignName string     `json:"campaign_name"`
 	ReplySnippet string     `json:"reply_snippet"`
 	ReplyBody    string     `json:"reply_body"`     // the lead's actual reply text
+	ReplyFrom    string     `json:"reply_from"`     // address the latest reply came from (may differ from lead_email)
 	Category     string     `json:"reply_category"` // interested|not_interested|ooo|unsubscribe|other|""
 }
 
@@ -44,7 +46,10 @@ func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, e
 		       l.email, trim(l.first_name || ' ' || l.last_name), c.id, c.name,
 		       COALESCE((SELECT metadata->>'subject' FROM events e
 		                 WHERE e.message_id=m.id AND e.type='reply' ORDER BY id DESC LIMIT 1), ''),
-		       m.reply_body, m.reply_category
+		       m.reply_body,
+		       COALESCE((SELECT metadata->>'from' FROM events e
+		                 WHERE e.message_id=m.id AND e.type='reply' ORDER BY id DESC LIMIT 1), ''),
+		       m.reply_category
 		FROM messages m
 		JOIN campaign_leads cl ON cl.id = m.campaign_lead_id
 		JOIN leads l ON l.id = cl.lead_id
@@ -60,7 +65,7 @@ func (s *Store) ListReplies(ctx context.Context, userID int64) ([]ReplyThread, e
 		var t ReplyThread
 		if err := rows.Scan(&t.MessageID, &t.AccountID, &t.RFCMessageID, &t.Subject, &t.Body,
 			&t.SentAt, &t.RepliedAt, &t.LeadEmail, &t.LeadName, &t.CampaignID, &t.CampaignName,
-			&t.ReplySnippet, &t.ReplyBody, &t.Category); err != nil {
+			&t.ReplySnippet, &t.ReplyBody, &t.ReplyFrom, &t.Category); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -113,6 +118,17 @@ func (s *Store) GetReplyContext(ctx context.Context, userID, messageID int64) (M
 		return Message{}, EmailAccount{}, Lead{}, false, nil
 	}
 	return m, acc, lead, true, nil
+}
+
+// LatestReplyFrom returns the address the most recent reply on a message came
+// from ("" if none recorded). A colleague may answer instead of the lead we
+// emailed — manual replies must go to whoever actually wrote back.
+func (s *Store) LatestReplyFrom(ctx context.Context, messageID int64) string {
+	var from string
+	_ = s.pool.QueryRow(ctx,
+		`SELECT COALESCE(metadata->>'from','') FROM events
+		 WHERE message_id=$1 AND type='reply' ORDER BY id DESC LIMIT 1`, messageID).Scan(&from)
+	return strings.TrimSpace(from)
 }
 
 // SentMessage is one delivered campaign email, for the sent-mail view.

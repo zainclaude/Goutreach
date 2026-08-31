@@ -124,9 +124,13 @@ export default function Inbox() {
         {active && (
           <div className="card" style={{ flex: 1, minWidth: 360 }}>
             <h3>Re: {active.subject}</h3>
-            <p className="muted">To: {active.lead_email} ({active.campaign_name})</p>
+            <p className="muted">
+              To: {active.reply_from && active.reply_from.toLowerCase() !== active.lead_email.toLowerCase()
+                ? <>{active.reply_from} <span className="tag" title="A different person at the company replied — your reply goes to them, not the original lead">replied for {active.lead_email}</span></>
+                : active.lead_email} ({active.campaign_name})
+            </p>
             <div className="card" style={{ background: "var(--panel2)", borderLeft: "3px solid #6c8cff" }}>
-              <div className="muted">{active.lead_name || active.lead_email} replied{active.replied_at ? ` · ${new Date(active.replied_at).toLocaleString()}` : ""}:</div>
+              <div className="muted">{(active.reply_from && active.reply_from.toLowerCase() !== active.lead_email.toLowerCase() ? active.reply_from : active.lead_name || active.lead_email)} replied{active.replied_at ? ` · ${new Date(active.replied_at).toLocaleString()}` : ""}:</div>
               <div style={{ whiteSpace: "pre-wrap" }}>
                 {active.reply_body
                   ? active.reply_body
