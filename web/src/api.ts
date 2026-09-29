@@ -111,7 +111,8 @@ export interface LeadStats {
 }
 export interface LeadsPage {
   leads: Lead[]; page: number; per_page: number;
-  total_filtered: number; counts: LeadStats;
+  total_filtered: number;
+  counts?: LeadStats; // only included on page 1
 }
 export interface LeadImport {
   id: number; filename: string; imported: number; updated: number;

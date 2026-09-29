@@ -165,15 +165,24 @@ type LeadStats struct {
 	Unenrolled  int `json:"unenrolled"`
 }
 
-// LeadStatCounts computes the Leads-page header counts in one query.
+// LeadStatCounts computes the Leads-page header counts in one query. Enrolled
+// and contacted lead-id sets are built once and hash-joined rather than probed
+// per lead — per-row EXISTS over 66k leads was the slow path.
 func (s *Store) LeadStatCounts(ctx context.Context, userID int64) (LeadStats, error) {
 	var st LeadStats
 	err := s.pool.QueryRow(ctx,
-		`SELECT count(*),
-		        count(*) FILTER (WHERE NOT `+contactedExpr+`),
-		        count(*) FILTER (WHERE verification_status NOT IN ('valid','invalid','risky','catch_all')),
-		        count(*) FILTER (WHERE NOT EXISTS(SELECT 1 FROM campaign_leads cl WHERE cl.lead_id = leads.id))
-		 FROM leads WHERE user_id=$1`, userID).
+		`WITH enrolled AS (SELECT DISTINCT lead_id FROM campaign_leads),
+		      contacted AS (SELECT DISTINCT cl.lead_id FROM campaign_leads cl
+		                    JOIN messages m ON m.campaign_lead_id = cl.id
+		                    WHERE m.status IN ('sent','replied','bounced'))
+		 SELECT count(*),
+		        count(*) FILTER (WHERE c.lead_id IS NULL),
+		        count(*) FILTER (WHERE l.verification_status NOT IN ('valid','invalid','risky','catch_all')),
+		        count(*) FILTER (WHERE e.lead_id IS NULL)
+		 FROM leads l
+		 LEFT JOIN enrolled e ON e.lead_id = l.id
+		 LEFT JOIN contacted c ON c.lead_id = l.id
+		 WHERE l.user_id=$1`, userID).
 		Scan(&st.Total, &st.Uncontacted, &st.Unverified, &st.Unenrolled)
 	return st, err
 }

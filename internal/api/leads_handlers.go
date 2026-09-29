@@ -55,15 +55,21 @@ func (s *Server) handleListLeads(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	stats, err := s.st.LeadStatCounts(r.Context(), userID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"leads": leads, "page": page, "per_page": perPage,
-		"total_filtered": filtered, "counts": stats,
-	})
+		"total_filtered": filtered,
+	}
+	// Header counts only on the first page — every visit starts there, and
+	// skipping them keeps page flips cheap.
+	if page == 1 {
+		stats, err := s.st.LeadStatCounts(r.Context(), userID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		resp["counts"] = stats
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type leadReq struct {

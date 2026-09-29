@@ -21,7 +21,7 @@ export default function Leads() {
     return api.get<LeadsPage>(`/leads?page=${p}&per_page=${PER_PAGE}&q=${encodeURIComponent(q)}`)
       .then((r) => {
         setLeads(r.leads || []);
-        setCounts(r.counts);
+        if (r.counts) setCounts(r.counts); // only sent on page 1 — keep the last known counts otherwise
         setTotalFiltered(r.total_filtered);
         setPage(r.page);
       })
