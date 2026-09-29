@@ -106,6 +106,13 @@ export interface Lead {
   verification_status: string; verified_at: string | null;
   source_file: string;
 }
+export interface LeadStats {
+  total: number; uncontacted: number; unverified: number; unenrolled: number;
+}
+export interface LeadsPage {
+  leads: Lead[]; page: number; per_page: number;
+  total_filtered: number; counts: LeadStats;
+}
 export interface LeadImport {
   id: number; filename: string; imported: number; updated: number;
   skipped: number; blacklisted: number; created_at: string;

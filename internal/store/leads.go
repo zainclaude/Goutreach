@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -98,11 +99,36 @@ func (s *Store) UpsertLead(ctx context.Context, l Lead) (Lead, bool, error) {
 // ListLeads returns leads for a user, with the filename of the upload each
 // lead first arrived in ("" for manually added leads).
 func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT `+leadCols+`, `+contactedExpr+` AS contacted,
-		        EXISTS(SELECT 1 FROM campaign_leads cl WHERE cl.lead_id = leads.id) AS enrolled,
-		        COALESCE((SELECT li.filename FROM lead_imports li WHERE li.id = leads.import_id), '')
-		 FROM leads WHERE user_id=$1 ORDER BY id DESC`, userID)
+	return s.ListLeadsPage(ctx, userID, "", 0, 0)
+}
+
+// leadSearchClause appends an ILIKE filter over the identifying columns when q
+// is non-empty. args must already hold user_id at $1.
+func leadSearchClause(q string, args []any) (string, []any) {
+	if q == "" {
+		return "", args
+	}
+	args = append(args, "%"+q+"%")
+	n := len(args)
+	return fmt.Sprintf(` AND (email ILIKE $%d OR first_name ILIKE $%d OR last_name ILIKE $%d OR company ILIKE $%d OR title ILIKE $%d)`,
+		n, n, n, n, n), args
+}
+
+// ListLeadsPage returns one page of leads (newest first), optionally filtered
+// by a case-insensitive substring over email/name/company/title. limit<=0
+// returns everything (legacy full-list behavior).
+func (s *Store) ListLeadsPage(ctx context.Context, userID int64, q string, limit, offset int) ([]Lead, error) {
+	args := []any{userID}
+	where, args := leadSearchClause(q, args)
+	sql := `SELECT ` + leadCols + `, ` + contactedExpr + ` AS contacted,
+	        EXISTS(SELECT 1 FROM campaign_leads cl WHERE cl.lead_id = leads.id) AS enrolled,
+	        COALESCE((SELECT li.filename FROM lead_imports li WHERE li.id = leads.import_id), '')
+	 FROM leads WHERE user_id=$1` + where + ` ORDER BY id DESC`
+	if limit > 0 {
+		args = append(args, limit, offset)
+		sql += fmt.Sprintf(` LIMIT $%d OFFSET $%d`, len(args)-1, len(args))
+	}
+	rows, err := s.pool.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +144,38 @@ func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+
+// CountLeads returns how many leads match the search filter (all leads when q
+// is empty) — the pager's denominator.
+func (s *Store) CountLeads(ctx context.Context, userID int64, q string) (int, error) {
+	args := []any{userID}
+	where, args := leadSearchClause(q, args)
+	var n int
+	err := s.pool.QueryRow(ctx, `SELECT count(*) FROM leads WHERE user_id=$1`+where, args...).Scan(&n)
+	return n, err
+}
+
+// LeadStats are the header counts on the Leads page, computed server-side so
+// the page no longer needs the full list to show them.
+type LeadStats struct {
+	Total       int `json:"total"`
+	Uncontacted int `json:"uncontacted"`
+	Unverified  int `json:"unverified"`
+	Unenrolled  int `json:"unenrolled"`
+}
+
+// LeadStatCounts computes the Leads-page header counts in one query.
+func (s *Store) LeadStatCounts(ctx context.Context, userID int64) (LeadStats, error) {
+	var st LeadStats
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*),
+		        count(*) FILTER (WHERE NOT `+contactedExpr+`),
+		        count(*) FILTER (WHERE verification_status NOT IN ('valid','invalid','risky','catch_all')),
+		        count(*) FILTER (WHERE NOT EXISTS(SELECT 1 FROM campaign_leads cl WHERE cl.lead_id = leads.id))
+		 FROM leads WHERE user_id=$1`, userID).
+		Scan(&st.Total, &st.Uncontacted, &st.Unverified, &st.Unenrolled)
+	return st, err
 }
 
 // ListUnemailedLeads returns leads that have never actually been *sent* an email

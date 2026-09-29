@@ -1,14 +1,42 @@
-import { useEffect, useState } from "react";
-import { api, uploadCSV, Lead, LeadImport, ImportFileResult } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { api, uploadCSV, Lead, LeadImport, LeadStats, LeadsPage, ImportFileResult } from "../api";
+
+const PER_PAGE = 100;
 
 export default function Leads() {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [counts, setCounts] = useState<LeadStats | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalFiltered, setTotalFiltered] = useState(0);
+  const [search, setSearch] = useState("");   // what's in the box
+  const [query, setQuery] = useState("");     // debounced, drives the fetch
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ email: "", first_name: "", last_name: "", company: "", title: "" });
   const [msg, setMsg] = useState("");
   const [history, setHistory] = useState<LeadImport[] | null>(null); // null = panel closed
+  const debounce = useRef<number | undefined>(undefined);
 
-  const load = () => api.get<Lead[]>("/leads").then((l) => setLeads(l || []));
-  useEffect(() => { load(); }, []);
+  const load = (p = page, q = query) => {
+    setLoading(true);
+    return api.get<LeadsPage>(`/leads?page=${p}&per_page=${PER_PAGE}&q=${encodeURIComponent(q)}`)
+      .then((r) => {
+        setLeads(r.leads || []);
+        setCounts(r.counts);
+        setTotalFiltered(r.total_filtered);
+        setPage(r.page);
+      })
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(page, query); }, [page, query]);
+
+  // Debounce typing so every keystroke doesn't hit the server.
+  const onSearch = (v: string) => {
+    setSearch(v);
+    window.clearTimeout(debounce.current);
+    debounce.current = window.setTimeout(() => { setPage(1); setQuery(v.trim()); }, 300);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / PER_PAGE));
 
   const loadHistory = () => api.get<LeadImport[]>("/leads/imports").then((h) => setHistory(h || []));
   const toggleHistory = () => (history === null ? loadHistory() : setHistory(null));
@@ -90,15 +118,25 @@ export default function Leads() {
       <div className="card">
         <div className="flex-between">
           <h3>
-            All leads ({leads.length})
+            All leads ({counts ? counts.total.toLocaleString() : "…"})
             <span className="muted" style={{ fontWeight: 400, fontSize: 13 }}>
-              {" "}· {leads.filter((l) => !l.contacted).length} uncontacted
-              {" "}· {leads.filter((l) => !["valid", "invalid", "risky", "catch_all"].includes(l.verification_status)).length} unverified
-              {" "}· {leads.filter((l) => !l.enrolled).length} not in any campaign
+              {counts && <>
+                {" "}· {counts.uncontacted.toLocaleString()} uncontacted
+                {" "}· {counts.unverified.toLocaleString()} unverified
+                {" "}· {counts.unenrolled.toLocaleString()} not in any campaign
+              </>}
             </span>
           </h3>
           <button className="secondary" onClick={verify} title="Check deliverability via your verification provider (configure it in Settings)">Verify emails</button>
         </div>
+
+        <div className="row" style={{ alignItems: "center", marginBottom: 10 }}>
+          <input placeholder="Search email, name, company, title…" value={search}
+            onChange={(e) => onSearch(e.target.value)} style={{ maxWidth: 320 }} />
+          {query && <span className="muted">{totalFiltered.toLocaleString()} match{totalFiltered === 1 ? "" : "es"}</span>}
+          <Pager page={page} totalPages={totalPages} loading={loading} onPage={setPage} />
+        </div>
+
         <table>
           <thead><tr><th>Email</th><th>Verification</th><th>Status</th><th>Name</th><th>Company</th><th>Title</th><th>Source file</th><th></th></tr></thead>
           <tbody>
@@ -116,10 +154,33 @@ export default function Leads() {
                 <td><button className="danger" onClick={() => remove(l.id)}>×</button></td>
               </tr>
             ))}
-            {leads.length === 0 && <tr><td colSpan={8} className="muted">No leads yet.</td></tr>}
+            {leads.length === 0 && !loading && <tr><td colSpan={8} className="muted">{query ? "No leads match your search." : "No leads yet."}</td></tr>}
+            {leads.length === 0 && loading && <tr><td colSpan={8} className="muted">Loading…</td></tr>}
           </tbody>
         </table>
+
+        <div className="row" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+          <Pager page={page} totalPages={totalPages} loading={loading} onPage={setPage} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+// Pager is the ‹ Prev / page N of M / Next › control (with a jump box so 600+
+// pages stay navigable).
+function Pager({ page, totalPages, loading, onPage }:
+  { page: number; totalPages: number; loading: boolean; onPage: (p: number) => void }) {
+  const [jump, setJump] = useState("");
+  const go = (p: number) => onPage(Math.min(totalPages, Math.max(1, p)));
+  return (
+    <div className="row" style={{ alignItems: "center", marginLeft: "auto", gap: 6 }}>
+      <button className="secondary" disabled={page <= 1 || loading} onClick={() => go(page - 1)}>‹ Prev</button>
+      <span className="muted" style={{ whiteSpace: "nowrap" }}>page {page.toLocaleString()} of {totalPages.toLocaleString()}</span>
+      <button className="secondary" disabled={page >= totalPages || loading} onClick={() => go(page + 1)}>Next ›</button>
+      <input value={jump} onChange={(e) => setJump(e.target.value.replace(/\D/g, ""))}
+        onKeyDown={(e) => { if (e.key === "Enter" && jump) { go(Number(jump)); setJump(""); } }}
+        placeholder="go to…" style={{ width: 64 }} title="Type a page number and press Enter" />
     </div>
   );
 }

@@ -5,18 +5,65 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/zainclaude/goutreach/internal/store"
 )
 
+// handleListLeads serves the lead list. With a ?page= param it returns one
+// page plus counts (the Leads table got too big to ship in full — tens of
+// thousands of rows crashed the browser); without it, the legacy full array.
+// Optional: per_page (default 100, max 500), q (substring search over
+// email/name/company/title).
 func (s *Server) handleListLeads(w http.ResponseWriter, r *http.Request) {
-	leads, err := s.st.ListLeads(r.Context(), s.userID(r))
+	userID := s.userID(r)
+	pageStr := r.URL.Query().Get("page")
+	if pageStr == "" {
+		leads, err := s.st.ListLeads(r.Context(), userID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, leads)
+		return
+	}
+
+	page, _ := strconv.Atoi(pageStr)
+	if page < 1 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if perPage < 1 {
+		perPage = 100
+	}
+	if perPage > 500 {
+		perPage = 500
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+
+	leads, err := s.st.ListLeadsPage(r.Context(), userID, q, perPage, (page-1)*perPage)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, leads)
+	if leads == nil {
+		leads = []store.Lead{}
+	}
+	filtered, err := s.st.CountLeads(r.Context(), userID, q)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	stats, err := s.st.LeadStatCounts(r.Context(), userID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"leads": leads, "page": page, "per_page": perPage,
+		"total_filtered": filtered, "counts": stats,
+	})
 }
 
 type leadReq struct {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, Account, Campaign, CampaignLeadDetail, Lead, Message, SendStatus, Stats, Step } from "../api";
+import { api, Account, Campaign, CampaignLeadDetail, Lead, LeadsPage, Message, SendStatus, Stats, Step } from "../api";
 
 export default function CampaignDetail() {
   const { id } = useParams();
@@ -14,6 +14,8 @@ export default function CampaignDetail() {
   const [sendStatus, setSendStatus] = useState<SendStatus | null>(null);
   const [msg, setMsg] = useState("");
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadTotal, setLeadTotal] = useState(0);
+  const [pickerSearch, setPickerSearch] = useState("");
   const [enrolled, setEnrolled] = useState<CampaignLeadDetail[]>([]);
   const [showPicker, setShowPicker] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
@@ -26,7 +28,11 @@ export default function CampaignDetail() {
   const loadStats = () => api.get<Stats>(`/campaigns/${cid}/stats`).then(setStats);
   const loadSendStatus = () => api.get<SendStatus>(`/campaigns/${cid}/send-status`).then(setSendStatus).catch(() => {});
 
-  const loadLeads = () => api.get<Lead[]>("/leads").then((l) => setLeads(l || []));
+  // The lead list is paged now (it can be 60k+ rows) — the picker shows the
+  // first 300 matches of a search rather than the whole list.
+  const loadLeads = (q = pickerSearch) =>
+    api.get<LeadsPage>(`/leads?page=1&per_page=300&q=${encodeURIComponent(q.trim())}`)
+      .then((r) => { setLeads(r.leads || []); setLeadTotal(r.total_filtered); });
   const loadEnrolled = () => api.get<CampaignLeadDetail[]>(`/campaigns/${cid}/leads`).then((l) => setEnrolled(l || []));
 
   useEffect(() => {
@@ -36,6 +42,11 @@ export default function CampaignDetail() {
     const t = setInterval(loadMessages, 5000); // poll while previews generate
     return () => { clearInterval(t); clearInterval(ss); };
   }, [cid]);
+
+  useEffect(() => {
+    const t = setTimeout(() => loadLeads(), 300); // debounce picker search
+    return () => clearTimeout(t);
+  }, [pickerSearch]);
 
   const toggleAccount = async (aid: number) => {
     const next = accountIDs.includes(aid) ? accountIDs.filter((x) => x !== aid) : [...accountIDs, aid];
@@ -180,13 +191,16 @@ export default function CampaignDetail() {
           const hidden = leads.length - pickable.length;
           return (
           <div style={{ marginTop: 12, maxHeight: 300, overflow: "auto", border: "1px solid #2a2a2a", borderRadius: 6, padding: 10 }}>
-            <div className="row" style={{ marginBottom: 8 }}>
-              <button className="secondary" onClick={() => setSelected(pickable.filter((l) => !enrolledIds.has(l.id)).map((l) => l.id))}>Select all unenrolled</button>
+            <div className="row" style={{ marginBottom: 8, alignItems: "center" }}>
+              <input placeholder="Search email, name, company…" value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)} style={{ maxWidth: 260 }} />
+              <button className="secondary" onClick={() => setSelected(pickable.filter((l) => !enrolledIds.has(l.id)).map((l) => l.id))}>Select all shown</button>
               <button className="secondary" onClick={() => setSelected([])}>Clear</button>
               <button onClick={enrollSelected} disabled={selected.length === 0}>Enroll selected ({selected.length})</button>
             </div>
+            {leadTotal > leads.length && <p className="muted" style={{ margin: "0 0 8px" }}>Showing the first {leads.length} of {leadTotal.toLocaleString()} matching leads — search to narrow down, or use “Enroll all leads” / “Enroll all unemailed leads” for bulk enrollment.</p>}
             {hidden > 0 && <p className="muted" style={{ margin: "0 0 8px" }}>{hidden} lead(s) hidden — verification marked them invalid, risky, or couldn't confirm the mailbox.</p>}
-            {pickable.length === 0 && <p className="muted">No selectable leads — import leads first.</p>}
+            {pickable.length === 0 && <p className="muted">{pickerSearch ? "No selectable leads match your search." : "No selectable leads — import leads first."}</p>}
             {pickable.map((l) => {
               const isEnrolled = enrolledIds.has(l.id);
               return (
