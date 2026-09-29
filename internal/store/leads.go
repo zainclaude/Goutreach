@@ -103,15 +103,15 @@ func (s *Store) ListLeads(ctx context.Context, userID int64) ([]Lead, error) {
 }
 
 // leadSearchClause appends an ILIKE filter over the identifying columns when q
-// is non-empty. args must already hold user_id at $1.
+// is non-empty. args must already hold user_id at $1. The concatenation must
+// match idx_leads_search's expression exactly or the trigram index is skipped.
 func leadSearchClause(q string, args []any) (string, []any) {
 	if q == "" {
 		return "", args
 	}
 	args = append(args, "%"+q+"%")
-	n := len(args)
-	return fmt.Sprintf(` AND (email ILIKE $%d OR first_name ILIKE $%d OR last_name ILIKE $%d OR company ILIKE $%d OR title ILIKE $%d)`,
-		n, n, n, n, n), args
+	return fmt.Sprintf(` AND (email || ' ' || first_name || ' ' || last_name || ' ' || company || ' ' || title) ILIKE $%d`,
+		len(args)), args
 }
 
 // ListLeadsPage returns one page of leads (newest first), optionally filtered
