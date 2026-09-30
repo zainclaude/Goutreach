@@ -80,6 +80,7 @@ func main() {
 	go warm.Run(ctx)
 
 	server := api.New(cfg, st, authSvc, cipher, resolver, google, snd, gen, logger)
+	go server.ResumeVerification(ctx) // pick verification runs back up after a deploy
 	httpSrv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           server.Router(),

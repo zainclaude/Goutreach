@@ -15,6 +15,10 @@ import (
 const (
 	keyVerifyProvider = "email_verify_provider" // millionverifier|zerobounce|neverbounce|bouncer
 	keyVerifyAPIKey   = "email_verify_api_key"  // secret
+
+	// verifyBatchSize bounds one fetch, not the run: runVerification keeps
+	// fetching the next batch until no unverified leads remain.
+	verifyBatchSize = 10000
 )
 
 // verifyRunning guards against stacking multiple verification passes for the same
@@ -75,15 +79,21 @@ func (s *Server) handleVerifyLeads(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "a verification run is already in progress — let it finish before starting another")
 		return
 	}
-	leads, err := s.st.ListUnverifiedLeads(r.Context(), userID, 10000)
+	leads, err := s.st.ListUnverifiedLeads(r.Context(), userID, verifyBatchSize)
 	if err != nil {
 		verifyDone(userID)
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.log.Printf("verify: starting — %d unverified lead(s) queued", len(leads))
+	// The run works through ALL unverified leads batch by batch, so report the
+	// full total, not just the first batch.
+	total, err := s.st.CountUnverifiedLeads(r.Context(), userID)
+	if err != nil {
+		total = len(leads)
+	}
+	s.log.Printf("verify: starting — %d unverified lead(s) queued (batches of %d)", total, verifyBatchSize)
 	go s.runVerification(userID, v, leads)
-	writeJSON(w, http.StatusOK, map[string]int{"queued": len(leads)})
+	writeJSON(w, http.StatusOK, map[string]int{"queued": total})
 }
 
 // verifyUnverifiedAsync kicks off background verification of a user's unverified
@@ -96,7 +106,7 @@ func (s *Server) verifyUnverifiedAsync(userID int64) {
 	if !verifyTryStart(userID) {
 		return // a run is already going; it will pick these up
 	}
-	leads, err := s.st.ListUnverifiedLeads(context.Background(), userID, 10000)
+	leads, err := s.st.ListUnverifiedLeads(context.Background(), userID, verifyBatchSize)
 	if err != nil || len(leads) == 0 {
 		verifyDone(userID)
 		return
@@ -104,32 +114,73 @@ func (s *Server) verifyUnverifiedAsync(userID int64) {
 	go s.runVerification(userID, v, leads)
 }
 
+// ResumeVerification restarts verification runs that a deploy killed: shortly
+// after boot, any user with a configured verifier and leads still awaiting
+// verification picks up where the run left off.
+func (s *Server) ResumeVerification(ctx context.Context) {
+	select {
+	case <-time.After(30 * time.Second): // let the app settle first
+	case <-ctx.Done():
+		return
+	}
+	userIDs, err := s.st.UserIDsWithUnverifiedLeads(ctx)
+	if err != nil {
+		s.log.Printf("verify resume: %v", err)
+		return
+	}
+	for _, uid := range userIDs {
+		s.log.Printf("verify resume: user %d has unverified leads — resuming", uid)
+		s.verifyUnverifiedAsync(uid)
+	}
+}
+
 // runVerification verifies each lead sequentially, paced to stay under provider
-// rate limits, and records the result. Runs detached from the request.
+// rate limits, and records the result. Runs detached from the request, working
+// through every unverified lead in batches of verifyBatchSize.
 func (s *Server) runVerification(userID int64, v verify.Verifier, leads []store.Lead) {
 	defer verifyDone(userID)
 	ctx := context.Background()
 	counts := map[string]int{}
 	errs := 0
-	for _, l := range leads {
-		time.Sleep(1 * time.Second) // ~1 req/s — well under provider rate limits
-		status, _, err := v.Verify(ctx, l.Email)
+batches:
+	for batch := 1; len(leads) > 0; batch++ {
+		saved := 0
+		for _, l := range leads {
+			time.Sleep(1 * time.Second) // ~1 req/s — well under provider rate limits
+			status, _, err := v.Verify(ctx, l.Email)
+			if err != nil {
+				if verify.IsOutOfCredits(err) {
+					s.log.Printf("verify: stopping — out of credits")
+					break batches
+				}
+				errs++
+				if errs <= 3 { // avoid log spam if the key/plan is bad for every lead
+					s.log.Printf("verify: lead %d (%s): %v", l.ID, l.Email, err)
+				}
+				continue
+			}
+			if err := s.st.SetLeadVerification(ctx, l.ID, status); err != nil {
+				s.log.Printf("verify: save lead %d: %v", l.ID, err)
+				continue
+			}
+			counts[status]++
+			saved++
+		}
+		// A batch where nothing got recorded means every lead is failing (bad
+		// key, provider outage) — refetching would just spin on the same leads.
+		if saved == 0 {
+			s.log.Printf("verify: batch %d recorded no results (%d errors) — stopping", batch, errs)
+			break
+		}
+		var err error
+		leads, err = s.st.ListUnverifiedLeads(ctx, userID, verifyBatchSize)
 		if err != nil {
-			if verify.IsOutOfCredits(err) {
-				s.log.Printf("verify: stopping — out of credits")
-				break
-			}
-			errs++
-			if errs <= 3 { // avoid log spam if the key/plan is bad for every lead
-				s.log.Printf("verify: lead %d (%s): %v", l.ID, l.Email, err)
-			}
-			continue
+			s.log.Printf("verify: fetching next batch: %v", err)
+			break
 		}
-		if err := s.st.SetLeadVerification(ctx, l.ID, status); err != nil {
-			s.log.Printf("verify: save lead %d: %v", l.ID, err)
-			continue
+		if len(leads) > 0 {
+			s.log.Printf("verify: batch %d done — %d unverified lead(s) remain, continuing", batch, len(leads))
 		}
-		counts[status]++
 	}
 	s.log.Printf("verify: finished — valid=%d invalid=%d risky=%d catch_all=%d unknown=%d errors=%d",
 		counts[verify.StatusValid], counts[verify.StatusInvalid], counts[verify.StatusRisky],

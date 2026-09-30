@@ -48,11 +48,13 @@ func (s *Store) SetLeadVerification(ctx context.Context, id int64, status string
 	return err
 }
 
-// ListUnverifiedLeads returns leads that have not been verified yet (status
-// 'unknown'), for the user, up to limit.
+// ListUnverifiedLeads returns leads that have never been through verification,
+// for the user, up to limit. verified_at IS NULL matters: leads the provider
+// answered 'unknown' for keep that status but get a verified_at, and must not
+// be fetched again — batched runs would re-verify them forever.
 func (s *Store) ListUnverifiedLeads(ctx context.Context, userID int64, limit int) ([]Lead, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT `+leadCols+` FROM leads WHERE user_id=$1 AND verification_status='unknown'
+		`SELECT `+leadCols+` FROM leads WHERE user_id=$1 AND verification_status='unknown' AND verified_at IS NULL
 		 ORDER BY id LIMIT $2`, userID, limit)
 	if err != nil {
 		return nil, err
@@ -65,6 +67,36 @@ func (s *Store) ListUnverifiedLeads(ctx context.Context, userID int64, limit int
 			return nil, err
 		}
 		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// CountUnverifiedLeads returns how many of the user's leads have never been
+// through verification (same filter as ListUnverifiedLeads).
+func (s *Store) CountUnverifiedLeads(ctx context.Context, userID int64) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx,
+		`SELECT count(*) FROM leads WHERE user_id=$1 AND verification_status='unknown' AND verified_at IS NULL`,
+		userID).Scan(&n)
+	return n, err
+}
+
+// UserIDsWithUnverifiedLeads lists users who have leads awaiting verification —
+// the boot-time resume sweep uses it to pick up runs a restart killed.
+func (s *Store) UserIDsWithUnverifiedLeads(ctx context.Context) ([]int64, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT DISTINCT user_id FROM leads WHERE verification_status='unknown' AND verified_at IS NULL`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
 	}
 	return out, rows.Err()
 }
