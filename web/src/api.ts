@@ -107,7 +107,8 @@ export interface Lead {
   source_file: string;
 }
 export interface LeadStats {
-  total: number; uncontacted: number; unverified: number; unenrolled: number;
+  total: number; uncontacted: number; unverified: number;
+  unknown_result: number; unenrolled: number;
 }
 export interface LeadsPage {
   leads: Lead[]; page: number; per_page: number;

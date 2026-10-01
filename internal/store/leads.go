@@ -71,6 +71,28 @@ func (s *Store) ListUnverifiedLeads(ctx context.Context, userID int64, limit int
 	return out, rows.Err()
 }
 
+// ListUnknownResultLeads returns leads the provider checked but couldn't
+// determine (status stayed 'unknown' with a verified_at). A manual verify
+// click retries these once — automatic runs leave them alone.
+func (s *Store) ListUnknownResultLeads(ctx context.Context, userID int64, limit int) ([]Lead, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT `+leadCols+` FROM leads WHERE user_id=$1 AND verification_status='unknown' AND verified_at IS NOT NULL
+		 ORDER BY id LIMIT $2`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Lead
+	for rows.Next() {
+		l, err := scanLead(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 // CountUnverifiedLeads returns how many of the user's leads have never been
 // through verification (same filter as ListUnverifiedLeads).
 func (s *Store) CountUnverifiedLeads(ctx context.Context, userID int64) (int, error) {
@@ -189,12 +211,15 @@ func (s *Store) CountLeads(ctx context.Context, userID int64, q string) (int, er
 }
 
 // LeadStats are the header counts on the Leads page, computed server-side so
-// the page no longer needs the full list to show them.
+// the page no longer needs the full list to show them. Unverified is "never
+// attempted"; UnknownResult is "checked, but the provider couldn't determine
+// deliverability" — they'd otherwise look identical (status 'unknown').
 type LeadStats struct {
-	Total       int `json:"total"`
-	Uncontacted int `json:"uncontacted"`
-	Unverified  int `json:"unverified"`
-	Unenrolled  int `json:"unenrolled"`
+	Total         int `json:"total"`
+	Uncontacted   int `json:"uncontacted"`
+	Unverified    int `json:"unverified"`
+	UnknownResult int `json:"unknown_result"`
+	Unenrolled    int `json:"unenrolled"`
 }
 
 // LeadStatCounts computes the Leads-page header counts in one query. Enrolled
@@ -209,13 +234,14 @@ func (s *Store) LeadStatCounts(ctx context.Context, userID int64) (LeadStats, er
 		                    WHERE m.status IN ('sent','replied','bounced'))
 		 SELECT count(*),
 		        count(*) FILTER (WHERE c.lead_id IS NULL),
-		        count(*) FILTER (WHERE l.verification_status NOT IN ('valid','invalid','risky','catch_all')),
+		        count(*) FILTER (WHERE l.verification_status NOT IN ('valid','invalid','risky','catch_all') AND l.verified_at IS NULL),
+		        count(*) FILTER (WHERE l.verification_status NOT IN ('valid','invalid','risky','catch_all') AND l.verified_at IS NOT NULL),
 		        count(*) FILTER (WHERE e.lead_id IS NULL)
 		 FROM leads l
 		 LEFT JOIN enrolled e ON e.lead_id = l.id
 		 LEFT JOIN contacted c ON c.lead_id = l.id
 		 WHERE l.user_id=$1`, userID).
-		Scan(&st.Total, &st.Uncontacted, &st.Unverified, &st.Unenrolled)
+		Scan(&st.Total, &st.Uncontacted, &st.Unverified, &st.UnknownResult, &st.Unenrolled)
 	return st, err
 }
 

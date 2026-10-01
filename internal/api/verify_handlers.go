@@ -91,9 +91,32 @@ func (s *Server) handleVerifyLeads(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		total = len(leads)
 	}
-	s.log.Printf("verify: starting — %d unverified lead(s) queued (batches of %d)", total, verifyBatchSize)
+	// Nothing new to verify? An explicit click retries leads the provider
+	// answered 'unknown' for — often transient (timeouts, greylisting).
+	// Automatic runs never touch these, so they can't loop.
+	retrying := false
+	if len(leads) == 0 {
+		leads, err = s.st.ListUnknownResultLeads(r.Context(), userID, verifyBatchSize)
+		if err != nil {
+			verifyDone(userID)
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		total = len(leads)
+		retrying = true
+	}
+	if len(leads) == 0 {
+		verifyDone(userID)
+		writeJSON(w, http.StatusOK, map[string]any{"queued": 0, "retrying": false})
+		return
+	}
+	if retrying {
+		s.log.Printf("verify: starting — retrying %d unknown-result lead(s)", total)
+	} else {
+		s.log.Printf("verify: starting — %d unverified lead(s) queued (batches of %d)", total, verifyBatchSize)
+	}
 	go s.runVerification(userID, v, leads)
-	writeJSON(w, http.StatusOK, map[string]int{"queued": total})
+	writeJSON(w, http.StatusOK, map[string]any{"queued": total, "retrying": retrying})
 }
 
 // verifyUnverifiedAsync kicks off background verification of a user's unverified

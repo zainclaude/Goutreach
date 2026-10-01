@@ -67,9 +67,11 @@ export default function Leads() {
   const verify = async () => {
     setMsg("");
     try {
-      const r = await api.post<{ queued: number }>("/leads/verify", {});
+      const r = await api.post<{ queued: number; retrying: boolean }>("/leads/verify", {});
       setMsg(r.queued > 0
-        ? `Verifying ${r.queued} lead(s) in the background — refresh in a bit to see results.`
+        ? (r.retrying
+          ? `Retrying ${r.queued} lead(s) the provider couldn't determine last time — refresh in a bit to see results.`
+          : `Verifying ${r.queued} lead(s) in the background — refresh in a bit to see results.`)
         : "All leads already verified.");
     } catch (e: any) { setMsg("✗ " + e.message); }
   };
@@ -123,6 +125,9 @@ export default function Leads() {
               {counts && <>
                 {" "}· {counts.uncontacted.toLocaleString()} uncontacted
                 {" "}· {counts.unverified.toLocaleString()} unverified
+                {counts.unknown_result > 0 && <span title="Checked, but the provider couldn't determine deliverability — click Verify emails to retry them">
+                  {" "}· {counts.unknown_result.toLocaleString()} unknown
+                </span>}
                 {" "}· {counts.unenrolled.toLocaleString()} not in any campaign
               </>}
             </span>
@@ -143,7 +148,7 @@ export default function Leads() {
             {leads.map((l) => (
               <tr key={l.id}>
                 <td>{l.email}</td>
-                <td><VerifyBadge status={l.verification_status} /></td>
+                <td><VerifyBadge status={l.verification_status} attempted={!!l.verified_at} /></td>
                 <td>{l.contacted
                   ? <span className="badge bounced" title="Emailed before">contacted</span>
                   : <span className="badge active" title="Never emailed">uncontacted</span>}</td>
@@ -185,8 +190,9 @@ function Pager({ page, totalPages, loading, onPage }:
   );
 }
 
-// VerifyBadge shows the email-verification result for a lead.
-function VerifyBadge({ status }: { status: string }) {
+// VerifyBadge shows the email-verification result for a lead. attempted
+// separates "never checked" from "checked but the provider couldn't tell".
+function VerifyBadge({ status, attempted }: { status: string; attempted?: boolean }) {
   switch (status) {
     case "valid":
       return <span className="badge active" title="Deliverable">valid</span>;
@@ -197,6 +203,8 @@ function VerifyBadge({ status }: { status: string }) {
     case "catch_all":
       return <span className="badge" title="Catch-all domain — accepts all addresses, can't confirm" style={{ background: "#33405e", color: "#9db4e8" }}>catch-all</span>;
     default:
-      return <span className="muted" title="Not verified yet">—</span>;
+      return attempted
+        ? <span className="badge" title="Checked — the provider couldn't determine deliverability. Verify emails retries these." style={{ background: "#4a3b5e", color: "#c9b4e8" }}>unknown</span>
+        : <span className="muted" title="Not verified yet">—</span>;
   }
 }
